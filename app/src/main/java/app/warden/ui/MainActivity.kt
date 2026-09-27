@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import app.warden.data.WardenClient
 import app.warden.ui.components.StatusDot
+import app.warden.ui.components.WRule
 import app.warden.ui.screens.*
 import app.warden.ui.theme.N
 import app.warden.ui.theme.T
@@ -31,8 +33,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); WardenClient.connect() }
 }
 
-private enum class Tab(val label: String) {
-    BOOTSTRAP("Start"), APPS("Apps"), ROOTED("Rooted"), AUDIT("Audit")
+private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    BOOTSTRAP("Start", app.warden.ui.components.WIcons.Start),
+    APPS("Apps", app.warden.ui.components.WIcons.Apps),
+    ROOTED("Rooted", app.warden.ui.components.WIcons.Rooted),
+    AUDIT("Audit", app.warden.ui.components.WIcons.Audit),
 }
 
 @Composable
@@ -90,24 +95,27 @@ private fun Toolbar(connected: Boolean, root: Boolean) {
 
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
-    // Nocturne `.seg`: a divider-ringed track; the selected option carries an
-    // inset accent ring + accent text rather than a filled ground.
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
-            .clip(N.shapeMd).border(1.dp, N.divider, N.shapeMd),
-    ) {
-        Tab.entries.forEachIndexed { i, t ->
-            val sel = t == current
-            if (i > 0) Box(Modifier.width(1.dp).height(44.dp).background(N.divider))
-            Box(
-                Modifier.weight(1f)
-                    .clickable { onSelect(t) }
-                    .then(if (sel) Modifier.border(1.dp, N.accent, N.shapeMd) else Modifier)
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(t.label, style = T.control.copy(color = if (sel) N.accent else N.textLabel),
-                    textAlign = TextAlign.Center)
+    // On-Device-AI style: a top fading rule, icon over label, accent when
+    // selected and dimmed otherwise — no boxes, no fills.
+    Column {
+        WRule()
+        Row(Modifier.fillMaxWidth().background(N.bg).padding(top = 8.dp, bottom = 6.dp)) {
+            Tab.entries.forEach { t ->
+                val sel = t == current
+                Column(
+                    Modifier.weight(1f).clickable { onSelect(t) }
+                        .padding(vertical = 5.dp)
+                        .alpha(if (sel) 1f else 0.5f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        t.icon, contentDescription = t.label,
+                        tint = if (sel) N.accent else N.text,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(t.label, style = T.label.copy(color = if (sel) N.accent else N.text))
+                }
             }
         }
     }
