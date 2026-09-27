@@ -92,3 +92,30 @@ starter/  bootstrap scripts (ADB + root paths)
 Deny-by-default. Every app must be granted once in the manager. Rooted-list
 entries are explicit per-app opt-ins. The audit log is the accountability
 backstop: nothing the broker does is invisible to the device owner.
+
+---
+
+## Emulator validation (2026-09-27, API 36 google_apis, rooted)
+
+Tested end-to-end on a rootable emulator. Results:
+
+- Server starts via `app_process` as **uid 0**, pins the manager signing cert,
+  brings up the exec socket, and registers the `warden` binder in ServiceManager.
+- Broker answers over binder: `apiVersion()` → 1, `serverUid()` → 0.
+- Manager app connects and renders **"running as root (uid 0) — all layers"**.
+- The audited gate denies an ungranted caller (`SecurityException`) and writes a
+  hash-chained audit line (`verdict":"deny","outcome":"no-scope:exec"`).
+
+**Key finding — SELinux.** Under enforcing SELinux a normal app cannot `find`
+the custom service:
+`avc: denied { find } name=warden tclass=service_manager scontext=untrusted_app`.
+So the ServiceManager discovery path only works for shell/system callers, not an
+untrusted app. Fixes:
+  - **Root path:** `module/post-fs-data.sh` injects a `magiskpolicy --live` rule
+    allowing `untrusted_app` to `find default_android_service` — added.
+  - **Non-root (ADB) path:** the binder-handoff via WardenProvider
+    (`ManagerHandshake`) sidesteps ServiceManager entirely — still the TODO.
+
+With SELinux set permissive the manager connected cleanly, confirming everything
+except the service-lookup label works; the sepolicy rule closes that gap on rooted
+devices.
