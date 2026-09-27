@@ -62,4 +62,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
+    // PC-free server start: an in-app ADB client that pairs with the device's
+    // own adbd over Wireless Debugging (Android 11+) and runs the bootstrap.
+    implementation("com.github.MuntashirAkon:libadb-android:3.0.0")
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.78")
 }

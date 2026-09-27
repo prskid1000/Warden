@@ -139,3 +139,25 @@ The non-root path is verified end-to-end on real Android 17 hardware:
 
 So both start paths now work: **root** via ServiceManager (+ sepolicy rule) and
 **non-root** via the broadcast handshake.
+
+## PC-free server start (Wireless Debugging)
+
+The Start tab can launch the broker with no PC and no root, using an in-app ADB
+client (`libadb-android`) that pairs with the device's own `adbd` over Android
+11+ Wireless Debugging and runs the bootstrap over loopback (127.0.0.1):
+
+- `AdbConnectionManager` (BouncyCastle-signed RSA keypair, persisted to filesDir).
+- `AdbStarter.pair(port, code)` then `start(connectPort)` → opens
+  `shell:CLASSPATH=<apk> app_process … Starter` detached, so the shell-uid
+  server survives the ADB stream closing; it then broadcasts its binder to the
+  manager via the existing handshake — the app connects to itself.
+- Conscrypt is registered as the TLS provider for the pairing handshake.
+
+One-time user step (can't be fully automated — the pairing code is transient):
+Settings → Developer options → Wireless debugging → *Pair device with pairing
+code*; enter that port + code in the app, Pair, then enter the Wireless
+debugging port and Start.
+
+Note: the prebuilt `libspake2.so`/`libconscrypt_jni.so` are not 16 KB-aligned, so
+debuggable builds show Android's compatibility warning on 16 KB-page devices;
+harmless on this 4 KB device. Release builds don't show the dialog.
