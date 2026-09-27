@@ -1,87 +1,74 @@
 # Warden
 
-**A privilege broker with a per-app audit trail and a per-app "rooted list".**
+**A privilege broker for Android with a per-app audit trail — no root.**
 
 Warden is a [Shizuku](https://github.com/RikkaApps/Shizuku)-style privilege
-broker, plus the two things Shizuku lacks:
+broker: it runs a small service with ADB-shell (`uid 2000`) privileges and lets
+apps you approve call system APIs through it — without rooting the phone. On top
+of Shizuku's model it adds a **full audit log**: every privileged call (which app
+→ which system service/method or command → allow/deny) is recorded and shown live
+in the app.
 
-1. **A full audit log** — every privileged call is recorded (which app → which
-   system service/method or shell command → allow/deny), tailing live in the UI.
-2. **A per-app rooted list** — add an app and choose what it gets: elevated API
-   access, a working `su`, and (on rooted devices) its own root-detection made
-   to report "rooted".
+It is single-purpose and consent-first: nothing is granted until you toggle it,
+and the audit log is the accountability backstop.
 
-It is **not** a rootkit and does nothing invisibly: consent is per-app and
-deny-by-default, and the audit log is the accountability backstop.
+## How it works
 
-## The three layers (and their honest reach)
+| Piece | What it does |
+|-------|--------------|
+| **Broker** | A service started with `shell` privileges (via ADB) that transacts against system services on behalf of granted apps. |
+| **`su` shim** | An optional `su` for cooperating apps, routed through the broker's exec socket (still no root — it runs with the broker's `shell` identity). |
+| **Audit log** | Append-only, hash-chained (tamper-evident) record of every call, tailing live in the app. |
 
-| Layer | Grants | Bootstrap | Root needed |
-|-------|--------|-----------|-------------|
-| **A** Binder broker | Elevated API access as shell/root | `adb shell sh start.sh` | No |
-| **B** `su` shim | Working `su -c` for cooperating apps | fake `su` on PATH | No* |
-| **C** Zygisk module | Spoof an app's root detection + real `su` | Magisk/Zygisk module | **Yes** |
+Security: signature-bound, scoped, expiring grants (deny-by-default), per-uid
+rate limiting, `clearCallingIdentity` on forwarded transactions, and
+transaction-code → method-name resolution in the log.
 
-\* Layer B reaches apps that use Warden's API or find `su` on their PATH. You
-cannot force `su` onto an *arbitrary uncooperative* app's PATH without root —
-that (and flipping an app's own root check) is layer C, which needs an already
-rooted device. On an unrooted device the rooted-list UI shows layer-C toggles as
-unavailable rather than pretending.
+## Starting it — no computer needed
+
+The app starts the broker itself over **Wireless Debugging** (Android 11+): an
+in-app ADB client pairs with the phone's own `adbd` over loopback and launches
+the service. One-time setup:
+
+1. Open Warden → **Start**.
+2. Enable **Developer options → Wireless debugging → Pair device with pairing code** (keep it open).
+3. Pull down the notification shade and type the 6-digit code into the Warden
+   notification (the code changes if you leave that screen, which is why it's
+   entered from the notification).
+
+After pairing once, **Start** connects instantly. You can also start it from a PC
+with `adb shell sh .../start.sh` (see the app's Advanced section).
 
 ## Layout
 
 ```
 api/       client library + AIDL (apps depend on this)
-server/    privileged process: broker + audit interceptor + permission/rooted stores
-app/       Compose manager (Nocturne theme): Start · Apps · Rooted list · Audit
-module/    Zygisk C++ module (layer C) — built with ndk-build, flashed via Magisk
-sushim/    fake su (layer B)
-starter/   bootstrap scripts (ADB + root)
+server/    the privileged broker: audit interceptor, grant store, exec socket
+app/       the manager app (single-page Nocturne UI): start · apps · activity
+sushim/    the layer-B `su` shim
+starter/   bootstrap script for the PC / manual path
 docs/      DESIGN.md
 ```
 
-Theme ("Nocturne", deep-indigo + lavender) is borrowed from the sibling Vessel
-project so the two read as one family.
-
-## Status
-
-**Everything builds.** `:api`, `:server` and `:app` compile to a signed APK; the
-`su` shim compiles to an arm64 ELF; the Zygisk module compiles to
-`libwarden.so`; and the Magisk module zips cleanly. Security rework is in:
-signature-bound scoped/expiring grants (`GrantStore`, `CallerAuth`), per-uid rate
-limiting, `clearCallingIdentity` on forwarded transactions, transaction-code →
-method-name resolution in the audit log, and an async, hash-chained
-(tamper-evident) `AuditSink`.
-
-Verified: compilation + packaging on Windows (JBR 21, AGP 8.7, NDK 27.1).
-Not yet verified on a device/emulator, and marked in code:
-
-- **Root path works end-to-end by design**: the server registers itself in
-  `ServiceManager` as `warden`, and the manager resolves it — so on a rooted
-  device the manager connects with no extra plumbing.
-- **ADB (non-root) binder handshake** (`ManagerHandshake` / `WardenProvider`) —
-  the ActivityManager provider lookup is per-API-level and still a TODO; until
-  then the ADB-start manager shows "not connected".
-- **Layer C hooking correctness** — the module compiles against the real Zygisk
-  API and resolves libc from `/proc/self/maps`; the actual PLT hooks need
-  on-device validation against the running Magisk/Zygisk.
-
-Note: `compileSdk`/`targetSdk` are 35 (the max AGP 8.7 supports); Android 17
-support is runtime (`SDK_INT`-guarded) and `minSdk` is 26.
-
-See `docs/DESIGN.md` for the full design.
+The UI theme ("Nocturne") is shared with the sibling Vessel / On-Device-AI
+projects so they read as one family.
 
 ## Build
 
 ```
-# one shot: APKs + su shim + Zygisk .so + Magisk zip  ->  dist/
-ANDROID_HOME=... ./tools/package.sh
-
-# or individually:
+ANDROID_HOME=... ./tools/package.sh     # signed APK + su shim -> dist/
+# or just the app:
 ./gradlew :app:assembleRelease
-clang --target=aarch64-linux-android26 sushim/su.c -o sushim/su-arm64
-( cd module && ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk )
 ```
 
-CI (`.github/workflows/release.yml`) rebuilds all artifacts and attaches them to
-a GitHub release on any `v*` tag.
+CI (`.github/workflows/release.yml`) builds and attaches the APK to a GitHub
+release on any `v*` tag.
+
+## Status
+
+Verified on device (Motorola, Android 17): PC-free wireless start + pairing,
+the shell broker, per-app grants, the live tamper-evident audit log, and
+Stop / Clear all work. `compileSdk`/`targetSdk` are 35 (AGP 8.7's max);
+runtime support targets Android 17 via `SDK_INT` guards, `minSdk` 26.
+
+See `docs/DESIGN.md` for the architecture.

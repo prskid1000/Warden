@@ -2,7 +2,6 @@ package app.warden.data
 
 import android.os.IBinder
 import app.warden.api.IWarden
-import app.warden.api.RootedEntry
 import org.json.JSONArray
 
 /**
@@ -35,10 +34,7 @@ object WardenClient {
         }
     }
 
-    fun rootedList(): List<RootedEntry> =
-        runCatching { svc?.rootedList()?.toList() }.getOrNull() ?: emptyList()
 
-    fun setRooted(e: RootedEntry) { runCatching { svc?.setRootedEntry(e) } }
 
     fun grants(): JSONArray =
         runCatching { JSONArray(svc?.grantsJson() ?: "[]") }.getOrDefault(JSONArray())

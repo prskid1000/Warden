@@ -1,7 +1,6 @@
 package app.warden.api;
 
 import app.warden.api.IRemoteProcess;
-import app.warden.api.RootedEntry;
 
 /**
  * The privileged server's interface. The server process runs as shell (uid 2000)
@@ -32,9 +31,6 @@ interface IWarden {
     void revokeGrant(in String pkg);
     /** JSON array of current grants for the manager UI. */
     String grantsJson();
-
-    void setRootedEntry(in RootedEntry entry);
-    List<RootedEntry> rootedList();
 
     /** Stream the append-only, hash-chained audit log (JSONL). */
     ParcelFileDescriptor auditTail();

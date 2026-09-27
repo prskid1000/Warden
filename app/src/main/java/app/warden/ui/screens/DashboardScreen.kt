@@ -19,31 +19,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.draw.rotate
 import app.warden.data.WardenClient
 import app.warden.ui.StartUi
 import app.warden.ui.components.*
 import app.warden.ui.theme.*
 
 private data class AppRow(val pkg: String, val label: String)
+private enum class Page { APPS, ACTIVITY }
 
 /**
- * The whole app on one page. Offline shows the start guidance; running shows two
- * collapsible sections — Apps (grant access) and Activity (audit) — so there is
- * no bottom nav to reason about. Same elements on every device; root-only bits
- * are present but disabled without root.
+ * The whole app on one page. Offline shows the start guidance; once running, an
+ * in-page segmented toggle switches between Apps (grant access) and Activity
+ * (the live audit log). No bottom nav.
  */
 @Composable
 fun DashboardScreen(connected: Boolean, start: StartUi) {
     val ctx = LocalContext.current
+    var page by remember { mutableStateOf(Page.APPS) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var granted by remember { mutableStateOf(grantedPkgs()) }
-    var appsOpen by remember { mutableStateOf(true) }
-    var actOpen by remember { mutableStateOf(false) }
     val lines = if (connected) rememberAuditLines() else emptyList()
     val apps = remember {
         val pm = ctx.packageManager
@@ -54,100 +52,71 @@ fun DashboardScreen(connected: Boolean, start: StartUi) {
     }
     fun refresh() { granted = grantedPkgs() }
 
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        if (!connected) {
-            item { OfflinePanel(start) }
-            return@LazyColumn
-        }
+    if (!connected) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) { OfflinePanel(start) }
+        return
+    }
 
-        item { StatRow(granted.size, lines.size) }
-
-        // ── Apps ──────────────────────────────────────────────
-        item {
-            SectionHeader("Apps", "${granted.size} with access", appsOpen, onToggle = { appsOpen = !appsOpen })
-        }
-        if (appsOpen) {
-            item {
-                Box(Modifier.fillMaxWidth().vInset().padding(horizontal = 12.dp, vertical = 10.dp)) {
-                    if (query.text.isEmpty()) Text("Search apps", style = T.body.copy(color = N.textMuted))
-                    BasicTextField(query, { query = it }, singleLine = true, textStyle = T.body,
-                        cursorBrush = SolidColor(N.accent))
+    Column(Modifier.fillMaxSize()) {
+        SegTabs(page, granted.size, lines.size) { page = it }
+        when (page) {
+            Page.APPS -> LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    Box(Modifier.fillMaxWidth().vInset().padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        if (query.text.isEmpty()) Text("Search apps", style = T.body.copy(color = N.textMuted))
+                        BasicTextField(query, { query = it }, singleLine = true, textStyle = T.body,
+                            cursorBrush = SolidColor(N.accent))
+                    }
+                }
+                items(apps.filter {
+                    query.text.isBlank() || it.label.contains(query.text, true) || it.pkg.contains(query.text, true)
+                }.sortedByDescending { it.pkg in granted },   // granted apps float to the top
+                    key = { it.pkg }) { app ->
+                    AppCard(app, app.pkg in granted, ::refresh)
                 }
             }
-            items(apps.filter {
-                query.text.isBlank() || it.label.contains(query.text, true) || it.pkg.contains(query.text, true)
-            }, key = { it.pkg }) { app ->
-                AppCard(app, app.pkg in granted, ::refresh)
+            Page.ACTIVITY -> LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (lines.isNotEmpty()) item {
+                    Text("Clear log", style = T.label.copy(color = N.danger),
+                        modifier = Modifier.clickable { WardenClient.clearAudit() }.padding(vertical = 4.dp))
+                }
+                if (lines.isEmpty()) item {
+                    Text("No privileged calls yet — they appear here as apps use the broker.",
+                        style = T.bodySmall.copy(color = N.textMuted), modifier = Modifier.padding(vertical = 8.dp))
+                }
+                items(lines) { AuditRow(it) }
             }
         }
-
-        // ── Activity ──────────────────────────────────────────
-        item {
-            SectionHeader("Activity", "${lines.size} ${if (lines.size == 1) "event" else "events"}",
-                actOpen, onToggle = { actOpen = !actOpen },
-                trailing = if (lines.isNotEmpty()) ({
-                    Text("Clear", style = T.label.copy(color = N.danger),
-                        modifier = Modifier.clickable { WardenClient.clearAudit() })
-                }) else null)
-        }
-        if (actOpen) {
-            if (lines.isEmpty()) item {
-                Text("No privileged calls yet — they appear here as apps use the broker.",
-                    style = T.bodySmall.copy(color = N.textMuted), modifier = Modifier.padding(vertical = 6.dp))
-            }
-            items(lines) { AuditRow(it) }
-        }
     }
 }
 
 @Composable
-private fun StatRow(access: Int, events: Int) {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatTile("Apps with access", "$access", N.accent, Modifier.weight(1f))
-        StatTile("Events logged", "$events", N.accent2, Modifier.weight(1f))
+private fun SegTabs(page: Page, access: Int, events: Int, onSelect: (Page) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(16.dp).clip(N.shapeMd).border(1.dp, N.divider, N.shapeMd)) {
+        Seg("Apps", "$access", page == Page.APPS, Modifier.weight(1f)) { onSelect(Page.APPS) }
+        Box(Modifier.width(1.dp).height(48.dp).background(N.divider))
+        Seg("Activity", "$events", page == Page.ACTIVITY, Modifier.weight(1f)) { onSelect(Page.ACTIVITY) }
     }
 }
 
 @Composable
-private fun StatTile(label: String, value: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier) {
-    Column(modifier.vCard().padding(vertical = 12.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(value, style = T.h4.copy(color = color))
-        Text(label.uppercase(), style = T.overline)
-    }
-}
-
-@Composable
-private fun Monogram(label: String) {
-    Box(Modifier.size(38.dp).clip(N.shapeMd).background(N.accent.copy(alpha = 0.14f)),
-        contentAlignment = Alignment.Center) {
-        Text(label.firstOrNull()?.uppercase() ?: "?", style = T.cardTitle.copy(color = N.accent))
-    }
-}
-
-@Composable
-private fun SectionHeader(title: String, meta: String, expanded: Boolean,
-                          onToggle: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 8.dp),
+private fun Seg(label: String, count: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Row(modifier.clickable(onClick = onClick)
+        .then(if (selected) Modifier.background(N.accent.copy(alpha = 0.10f)) else Modifier)
+        .padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically) {
-        Chevron(expanded)
-        Spacer(Modifier.width(8.dp))
-        Text(title, style = T.subtitle)
-        Spacer(Modifier.width(8.dp))
-        Text(meta, style = T.label.copy(color = N.textMuted))
-        Spacer(Modifier.weight(1f))
-        trailing?.invoke()
+        Text(label, style = T.control.copy(color = if (selected) N.accent else N.textLabel))
+        Spacer(Modifier.width(6.dp))
+        Text(count, style = T.label.copy(color = if (selected) N.accent else N.textMuted))
     }
-}
-
-@Composable
-private fun Chevron(expanded: Boolean) {
-    Text(if (expanded) "▾" else "▸", style = T.subtitle.copy(color = N.accent))
 }
 
 @Composable
@@ -168,12 +137,19 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
 }
 
 @Composable
+private fun Monogram(label: String) {
+    Box(Modifier.size(38.dp).clip(N.shapeMd).background(N.accent.copy(alpha = 0.14f)),
+        contentAlignment = Alignment.Center) {
+        Text(label.firstOrNull()?.uppercase() ?: "?", style = T.cardTitle.copy(color = N.accent))
+    }
+}
+
+@Composable
 private fun NSwitch(checked: Boolean, enabled: Boolean = true, onToggle: (Boolean) -> Unit) {
     Switch(checked = checked, enabled = enabled, onCheckedChange = onToggle,
         colors = SwitchDefaults.colors(
             checkedTrackColor = N.accent, checkedThumbColor = N.bg,
-            uncheckedTrackColor = N.surfaceHi, uncheckedBorderColor = N.divider,
-            disabledUncheckedTrackColor = N.surfaceHi, disabledUncheckedBorderColor = N.divider))
+            uncheckedTrackColor = N.surfaceHi, uncheckedBorderColor = N.divider))
 }
 
 @Composable
@@ -228,4 +204,3 @@ private fun grantedPkgs(): Set<String> {
     val arr = WardenClient.grants()
     return buildSet { for (i in 0 until arr.length()) add(arr.getJSONObject(i).getString("pkg")) }
 }
-

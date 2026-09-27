@@ -7,7 +7,6 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import app.warden.api.IRemoteProcess
 import app.warden.api.IWarden
-import app.warden.api.RootedEntry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -29,7 +28,6 @@ class WardenService(
     private val stateDir = File(dataDir, "state").apply { mkdirs() }
     val audit = AuditSink(File(dataDir, "log"))
     private val grants = GrantStore(stateDir)
-    private val rooted = RootedListStore(stateDir)
     private val auth = CallerAuth(managerCertSha256)
     private val limiter = RateLimiter()
 
@@ -109,20 +107,6 @@ class WardenService(
             })
         }
         return arr.toString()
-    }
-
-    override fun setRootedEntry(entry: RootedEntry) {
-        managerOnly()
-        rooted.set(entry)
-        if (entry.giveBroker) {
-            val scopes = mutableSetOf(Grant.SCOPE_ALL)
-            if (entry.giveSu) scopes.add(Grant.SCOPE_EXEC)
-            grants.put(Grant(entry.pkg, certOf(entry.pkg), scopes, 0L))
-        }
-    }
-
-    override fun rootedList(): MutableList<RootedEntry> {
-        managerOnly(); return rooted.all().toMutableList()
     }
 
     override fun auditTail(): ParcelFileDescriptor {

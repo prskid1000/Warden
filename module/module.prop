@@ -1,7 +1,0 @@
-id=warden
-name=Warden
-version=v0.1.0
-versionCode=1
-author=Prithwiraj Samanta
-description=Per-app rooted list + privilege broker companion for Warden. Spoofs root detection and provides su for apps on the list. Requires Zygisk.
-updateJson=
