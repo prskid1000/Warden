@@ -21,6 +21,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Receives the broker binder broadcast by the shell-started server
+             (ADB path). Exported so the server's shell-uid broadcast reaches it;
+             the payload binder is validated before it is trusted. -->
+        <receiver
+            android:name=".data.BinderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="app.warden.action.BINDER" />
+            </intent-filter>
+        </receiver>
+
         <!-- Receives the broker binder from the server (ADB-start path) and
              relays it to granted client apps. -->
         <provider

@@ -119,3 +119,23 @@ untrusted app. Fixes:
 With SELinux set permissive the manager connected cleanly, confirming everything
 except the service-lookup label works; the sepolicy rule closes that gap on rooted
 devices.
+
+## Device validation — ADB handshake (2026-09-27, Motorola Signature, Android 17 / API 37, non-root)
+
+The non-root path is verified end-to-end on real Android 17 hardware:
+
+- Server started as **shell (uid 2000)** via `app_process`; `addService` correctly
+  fails (non-root) and the server falls back to the broadcast handshake.
+- `ManagerHandshake` resolves `broadcastIntentWithFeature(...)` reflectively and
+  broadcasts the binder (wrapped in `BinderContainer`) to the manager's
+  `BinderReceiver`, rebroadcasting for a 30s window.
+- The manager receives it, **validates** the binder (`apiVersion`/`serverUid`)
+  before trusting, and attaches. UI shows **"running as shell (uid 2000) —
+  layers A + B"**.
+- Layer B: the `su` shim connects to `@warden_exec`, the broker identifies the
+  peer by socket credentials as `com.android.shell` (uid 2000), denies the
+  ungranted caller, and writes a hash-chained audit entry
+  (`target":"su","args":"id","verdict":"deny"`).
+
+So both start paths now work: **root** via ServiceManager (+ sepolicy rule) and
+**non-root** via the broadcast handshake.

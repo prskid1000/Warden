@@ -37,8 +37,11 @@ fun AppsScreen() {
             .sortedBy { it.label.lowercase() }
     }
 
+    val connected by androidx.compose.runtime.produceState(false) {
+        while (true) { value = WardenClient.connected; kotlinx.coroutines.delay(1000) }
+    }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        if (!WardenClient.connected) {
+        if (!connected) {
             NotConnected(); return
         }
         OutlinedTextField(query, { query = it }, singleLine = true,

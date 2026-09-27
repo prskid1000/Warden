@@ -2,31 +2,30 @@ package app.warden.server
 
 import android.os.IBinder
 import android.util.Log
+import app.warden.api.WardenContract
 
 /**
- * Publishes the broker binder so client apps can obtain it.
- *
- * Strategy (see docs/DESIGN.md): the manager app exposes a ContentProvider that
- * client apps query; the manager holds the binder it received from this server
- * over an initial handshake and relays it. On rooted devices the Zygisk module
- * can instead inject the binder straight into a rooted-list app's process.
- *
- * The handshake itself reuses Shizuku's proven trick: the server calls a
- * pre-agreed transaction on the manager's provider binder (obtained via
- * ActivityManager) to deliver `this`. Implemented in the on-device build; this
- * stub documents the contract and the two delivery paths.
+ * Publishes the broker binder so the manager can reach it, on both start paths:
+ *   - Root:  register in ServiceManager as "warden" (needs the sepolicy rule
+ *            from the Magisk module for untrusted apps to `find` it).
+ *   - ADB:   broadcast the binder to the manager's BinderReceiver (shell uid is
+ *            allowed to broadcast; no ServiceManager, no root).
+ * Both are attempted; whichever the current identity permits succeeds.
  */
 object BinderPublisher {
     private const val TAG = "Warden"
-    const val TRANSACTION_deliverBinder = IBinder.FIRST_CALL_TRANSACTION + 1
-    const val MANAGER_PACKAGE = "app.warden"
+    const val MANAGER_PACKAGE = WardenContract.MANAGER_PACKAGE
 
     fun publish(binder: IBinder) {
-        // 1. Root/Zygisk path: register under ServiceManager for module pickup.
         runCatching { ServiceManagerCompat.addService("warden", binder) }
             .onFailure { Log.w(TAG, "addService unavailable (non-root start): ${it.message}") }
-        // 2. ADB path: hand the binder to the manager's provider via the
-        //    deliverBinder transaction. See ManagerHandshake on the client side.
-        ManagerHandshake.deliver(binder, MANAGER_PACKAGE, TRANSACTION_deliverBinder)
+        // Rebroadcast for a short window so the manager receives the binder even
+        // if it is opened a few seconds after the adb command is run.
+        Thread({
+            repeat(15) {
+                ManagerHandshake.deliver(binder)
+                Thread.sleep(2000)
+            }
+        }, "warden-handshake").apply { isDaemon = true }.start()
     }
 }
