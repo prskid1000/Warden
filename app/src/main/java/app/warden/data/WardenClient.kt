@@ -23,6 +23,9 @@ object WardenClient {
 
     fun attach(binder: IBinder) { svc = IWarden.Stub.asInterface(binder) }
 
+    /** The live broker binder, for relaying to granted client apps via the provider. */
+    fun rawBinder(): IBinder? = svc?.asBinder()?.takeIf { it.isBinderAlive }
+
     /** Try the ServiceManager path (root start). Safe to call repeatedly. */
     fun connect() {
         if (connected) return

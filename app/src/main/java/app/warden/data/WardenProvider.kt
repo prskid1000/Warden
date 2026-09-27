@@ -28,7 +28,9 @@ class WardenProvider : ContentProvider() {
             extras?.getBinder("binder")?.let { delivered = it; WardenClient.attach(it) }
             Bundle()
         }
-        "getBinder" -> Bundle().apply { putBinder("binder", delivered) }
+        // Relay the live broker binder to a client app (e.g. Sundown). The broker
+        // still enforces the caller's grant on every call, so this is safe.
+        "getBinder" -> Bundle().apply { putBinder("binder", WardenClient.rawBinder() ?: delivered) }
         else -> null
     }
 
