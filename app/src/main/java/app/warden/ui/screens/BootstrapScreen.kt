@@ -1,6 +1,7 @@
 package app.warden.ui.screens
 
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.warden.adb.AdbStarter
+import app.warden.adb.PairNotification
 import app.warden.data.WardenClient
 import app.warden.ui.components.*
 import app.warden.ui.theme.*
@@ -71,16 +73,24 @@ private fun StartCard() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var phase by remember { mutableStateOf(Phase.Idle) }
-    var code by remember { mutableStateOf(TextFieldValue("")) }
     var msg by remember { mutableStateOf<String?>(null) }
     var advanced by remember { mutableStateOf(false) }
+
+    val notifPerm = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
 
     fun handle(outcome: Result<AdbStarter.Outcome>) {
         outcome.fold(
             onSuccess = {
                 when (it) {
                     is AdbStarter.Outcome.Launched -> { phase = Phase.Idle; msg = "Started. Connecting…" }
-                    AdbStarter.Outcome.PairNeeded -> { phase = Phase.NeedCode; msg = null }
+                    AdbStarter.Outcome.PairNeeded -> {
+                        phase = Phase.NeedCode; msg = null
+                        if (Build.VERSION.SDK_INT >= 33)
+                            notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        PairNotification.prompt(ctx)   // the code goes in here, not the app
+                    }
                 }
             },
             onFailure = { phase = if (phase == Phase.NeedCode) Phase.NeedCode else Phase.Idle; msg = it.message },
@@ -106,18 +116,14 @@ private fun StartCard() {
             }
             Phase.NeedCode -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("First time only — pair this phone:", style = T.subtitle)
-                Text("1. Open settings, turn on Wireless debugging, then tap \"Pair device with pairing code\".",
-                    style = T.bodySmall.copy(color = N.textMuted))
-                WButton("Open settings", Tone.Neutral) {
+                Step("1", "Open settings → turn on Wireless debugging → tap \"Pair device with pairing code\". Keep that screen open.")
+                Step("2", "Swipe down the notification shade (don't leave the pairing screen) and type the 6-digit code into the Warden notification.")
+                WButton("Open settings", Tone.Accent) {
                     runCatching { ctx.startActivity(Intent("android.settings.ADB_WIRELESS_SETTINGS")) }
                         .onFailure { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
                 }
-                Text("2. Type the 6-digit code shown:", style = T.bodySmall.copy(color = N.textMuted))
-                CodeField(code) { code = it }
-                BigButton("Pair & start") {
-                    phase = Phase.Working; msg = "Pairing…"
-                    scope.launch { handle(AdbStarter.pairAndStart(ctx, code.text)) }
-                }
+                Text("The code changes if you leave that screen — that's why you enter it from the notification, not here.",
+                    style = T.bodySmall.copy(color = N.textMuted))
             }
         }
 
@@ -139,6 +145,14 @@ private fun StartCard() {
 }
 
 @Composable
+private fun Step(n: String, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(n, style = T.control.copy(color = N.accent))
+        Text(text, style = T.bodySmall.copy(color = N.textMuted))
+    }
+}
+
+@Composable
 private fun BigButton(label: String, onClick: () -> Unit) {
     Text(label, style = T.control.copy(color = N.accent),
         modifier = Modifier.fillMaxWidth()
@@ -149,16 +163,6 @@ private fun BigButton(label: String, onClick: () -> Unit) {
         textAlign = androidx.compose.ui.text.style.TextAlign.Center)
 }
 
-@Composable
-private fun CodeField(value: TextFieldValue, onChange: (TextFieldValue) -> Unit) {
-    Box(Modifier.fillMaxWidth().vInset().padding(horizontal = 14.dp, vertical = 13.dp)) {
-        if (value.text.isEmpty()) Text("6-digit code", style = T.body.copy(color = N.textMuted))
-        BasicTextField(value, onChange, singleLine = true,
-            textStyle = T.body.copy(color = N.text, letterSpacing = androidx.compose.ui.unit.TextUnit(4f, androidx.compose.ui.unit.TextUnitType.Sp)),
-            cursorBrush = SolidColor(N.accent),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-    }
-}
 
 private fun Modifier.clickableText(onClick: () -> Unit): Modifier =
     this.clickable(onClick = onClick)

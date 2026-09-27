@@ -49,6 +49,10 @@ private fun WardenApp() {
     val root by produceState(false) {
         while (true) { value = WardenClient.rootAvailable; delay(1000) }
     }
+    // Section C (the rooted list / spoofing) only exists on a rooted device, so
+    // its tab is hidden unless the broker is running as root.
+    val tabs = Tab.entries.filter { it != Tab.ROOTED || root }
+    LaunchedEffect(root) { if (tab == Tab.ROOTED && !root) tab = Tab.BOOTSTRAP }
 
     Column(
         Modifier.fillMaxSize().background(N.bg)
@@ -63,7 +67,7 @@ private fun WardenApp() {
                 Tab.AUDIT -> AuditScreen()
             }
         }
-        BottomBar(tab) { tab = it }
+        BottomBar(tabs, tab) { tab = it }
     }
 }
 
@@ -94,13 +98,13 @@ private fun Toolbar(connected: Boolean, root: Boolean) {
 }
 
 @Composable
-private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
+private fun BottomBar(tabs: List<Tab>, current: Tab, onSelect: (Tab) -> Unit) {
     // On-Device-AI style: a top fading rule, icon over label, accent when
     // selected and dimmed otherwise — no boxes, no fills.
     Column {
         WRule()
         Row(Modifier.fillMaxWidth().background(N.bg).padding(top = 8.dp, bottom = 6.dp)) {
-            Tab.entries.forEach { t ->
+            tabs.forEach { t ->
                 val sel = t == current
                 Column(
                     Modifier.weight(1f).clickable { onSelect(t) }

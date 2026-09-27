@@ -3,6 +3,7 @@
 
     <!-- Loopback socket to the device's own adbd for PC-free server start. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission"
         xmlns:tools="http://schemas.android.com/tools" />
@@ -24,6 +25,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Inline-reply target for the pairing code (kept off-UI so the system
+             pairing dialog stays open and the code stays valid). -->
+        <receiver
+            android:name=".adb.PairReplyReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.warden.action.PAIR_REPLY" />
+            </intent-filter>
+        </receiver>
 
         <!-- Receives the broker binder broadcast by the shell-started server
              (ADB path). Exported so the server's shell-uid broadcast reaches it;
