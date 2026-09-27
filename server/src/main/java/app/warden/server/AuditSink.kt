@@ -76,6 +76,17 @@ class AuditSink(private val dir: File) {
 
     fun path(): String = file.absolutePath
 
+    /** Wipe the log and reset the hash chain. */
+    @Synchronized
+    fun clear() {
+        queue.clear()
+        runCatching {
+            file.writeText("")
+            File(dir, "audit.1.jsonl").takeIf { it.exists() }?.delete()
+        }
+        prevHash = "0".repeat(64)
+    }
+
     private fun seedHash(): String =
         runCatching {
             file.takeIf { it.exists() }?.useLines { it.lastOrNull() }

@@ -130,6 +130,17 @@ class WardenService(
         return ParcelFileDescriptor.open(File(audit.path()), ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
+    override fun clearAudit() { managerOnly(); audit.clear() }
+
+    override fun shutdown() {
+        managerOnly()
+        // Exit shortly after this call returns so the binder reply is delivered.
+        Thread {
+            Thread.sleep(200)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }.apply { isDaemon = true }.start()
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private fun describe(b: IBinder): String =

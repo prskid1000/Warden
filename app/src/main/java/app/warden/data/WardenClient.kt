@@ -50,4 +50,8 @@ object WardenClient {
     fun revokeGrant(pkg: String) { runCatching { svc?.revokeGrant(pkg) } }
 
     fun auditFd() = runCatching { svc?.auditTail() }.getOrNull()
+
+    fun shutdown() { runCatching { svc?.shutdown() }; svc = null }
+
+    fun clearAudit() { runCatching { svc?.clearAudit() } }
 }

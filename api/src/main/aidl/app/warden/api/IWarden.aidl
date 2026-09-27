@@ -38,4 +38,10 @@ interface IWarden {
 
     /** Stream the append-only, hash-chained audit log (JSONL). */
     ParcelFileDescriptor auditTail();
+
+    /** Manager-only: stop the broker (the server process exits). */
+    void shutdown();
+
+    /** Manager-only: clear the audit log. */
+    void clearAudit();
 }

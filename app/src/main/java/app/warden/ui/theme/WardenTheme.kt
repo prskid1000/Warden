@@ -49,6 +49,9 @@ object N {
     val ok = Color(0xFF7FB69A)
     val danger = Color(0xFFD98A8A)
     val warn = Color(0xFFD9C48A)
+    // Nocturne "section" indigo — used for the header glow band.
+    val section = Color(0xFF262A60)
+    val sectionGlow = Color(0xFF353B80)
 
     // derived
     val textMuted = text.copy(alpha = 0.55f)

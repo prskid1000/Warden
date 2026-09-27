@@ -39,15 +39,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); WardenClient.connect() }
 }
 
-private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    HOME("Home", app.warden.ui.components.WIcons.Start),
-    APPS("Apps", app.warden.ui.components.WIcons.Apps),
-    ROOTED("Rooted", app.warden.ui.components.WIcons.Rooted),
-}
 
 @Composable
 private fun WardenApp() {
-    var tab by remember { mutableStateOf(Tab.HOME) }
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { ConnState.ensurePolling(scope) }
@@ -80,75 +74,53 @@ private fun WardenApp() {
             )
         }
     }
-    val startUi = StartUi(working, needCode, msg, ::doStart)
-
-    val tabs = Tab.entries.filter { it != Tab.ROOTED || root }
-    LaunchedEffect(root) { if (tab == Tab.ROOTED && !root) tab = Tab.HOME }
+    fun doStop() {
+        WardenClient.shutdown()
+        working = false; needCode = false; msg = null
+    }
+    val startUi = StartUi(working, needCode, msg, ::doStart, ::doStop)
 
     Column(Modifier.fillMaxSize().background(N.bg).windowInsetsPadding(WindowInsets.systemBars)) {
-        Toolbar(connected, root, working) { doStart() }
+        Toolbar(connected, root, working, onStart = ::doStart, onStop = ::doStop)
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (tab) {
-                Tab.HOME -> HomeScreen(connected, root, startUi)
-                Tab.APPS -> AppsScreen()
-                Tab.ROOTED -> RootedListScreen()
-            }
+            DashboardScreen(connected, root, startUi)
         }
-        BottomBar(tabs, tab) { tab = it }
     }
 }
 
 @Composable
-private fun Toolbar(connected: Boolean, root: Boolean, working: Boolean, onStart: () -> Unit) {
+private fun Toolbar(connected: Boolean, root: Boolean, working: Boolean,
+                   onStart: () -> Unit, onStop: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
+                0f to N.section.copy(alpha = 0.45f), 1f to Color.Transparent))
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text("Warden", style = T.h3)
             Text("privilege broker · audit", style = T.mono)
         }
-        when {
-            connected -> {
-                val c = if (root) N.ok else N.warn
-                Row(Modifier.vCard(N.shapeTag).padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StatusDot(c); Text(if (root) "root" else "active", style = T.control.copy(color = c))
-                }
+        // Single control lives here: Stop when running, Start when not. When
+        // running, a small "C" badge shows whether layer-C (root spoofing) is live.
+        if (connected) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (root) app.warden.ui.components.WTag("root", app.warden.ui.components.Tone.Ok)
+                ControlChip("Stop", N.danger, enabled = true, onClick = onStop)
             }
-            else -> {
-                // Top-right = a Start action while offline.
-                Text(if (working) "starting…" else "Start",
-                    style = T.control.copy(color = N.accent),
-                    modifier = Modifier.clip(N.shapeTag)
-                        .background(N.accent.copy(alpha = 0.10f)).border(1.dp, N.accent, N.shapeTag)
-                        .clickable(enabled = !working) { onStart() }
-                        .padding(horizontal = 14.dp, vertical = 7.dp))
-            }
+        } else {
+            ControlChip(if (working) "starting…" else "Start", N.accent, enabled = !working, onClick = onStart)
         }
     }
 }
 
 @Composable
-private fun BottomBar(tabs: List<Tab>, current: Tab, onSelect: (Tab) -> Unit) {
-    Column {
-        WRule()
-        Row(Modifier.fillMaxWidth().background(N.bg).padding(top = 8.dp, bottom = 6.dp)) {
-            tabs.forEach { t ->
-                val sel = t == current
-                Column(
-                    Modifier.weight(1f).clickable { onSelect(t) }
-                        .padding(vertical = 5.dp).alpha(if (sel) 1f else 0.5f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    androidx.compose.material3.Icon(
-                        t.icon, contentDescription = t.label,
-                        tint = if (sel) N.accent else N.text, modifier = Modifier.size(22.dp))
-                    Text(t.label, style = T.label.copy(color = if (sel) N.accent else N.text))
-                }
-            }
-        }
-    }
+private fun ControlChip(label: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Text(label, style = T.control.copy(color = color),
+        modifier = Modifier.clip(N.shapeTag)
+            .background(color.copy(alpha = 0.10f)).border(1.dp, color.copy(alpha = 0.7f), N.shapeTag)
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 14.dp, vertical = 7.dp))
 }
+
