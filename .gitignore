@@ -1,0 +1,14 @@
+.gradle/
+build/
+*/build/
+.cxx/
+local.properties
+.idea/
+.kotlin/
+*.iml
+dist/
+module/libs/
+module/obj/
+# secrets / signing
+*.jks
+keystore.properties

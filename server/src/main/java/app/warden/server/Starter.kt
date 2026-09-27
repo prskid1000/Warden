@@ -1,0 +1,55 @@
+package app.warden.server
+
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Looper
+import android.util.Log
+import java.io.File
+import java.security.MessageDigest
+
+/**
+ * Entry point that `app_process` invokes from starter/start.sh. Runs as shell
+ * (uid 2000) or root (uid 0).
+ *
+ *   1. Prepare Looper + data dir.
+ *   2. Pin the manager's signing cert (whatever currently signs app.warden), so
+ *      manager-only calls are authenticated by key, not by package name alone.
+ *   3. Build the broker, publish its binder, start the exec socket (layer B).
+ */
+object Starter {
+    private const val TAG = "Warden"
+
+    @JvmStatic
+    fun main(args: Array<String>) {
+        Looper.prepareMainLooper()
+        val dataDir = File(args.firstOrNull() ?: "/data/local/tmp/warden").apply { mkdirs() }
+
+        val managerCert = managerCertSha256()
+        val service = WardenService(dataDir, managerCert)
+
+        ExecSocketServer(
+            auth = CallerAuth(managerCert),
+            grants = service.grantStore(),
+            audit = service.audit,
+            isManagerUid = service::isManagerUid,
+        ).start()
+
+        BinderPublisher.publish(service)
+        Log.i(TAG, "Warden up: uid=${service.serverUid()} data=$dataDir managerCert=${managerCert?.take(12)}")
+
+        Looper.loop()
+    }
+
+    private fun managerCertSha256(): String? = runCatching {
+        val flags = if (Build.VERSION.SDK_INT >= 28)
+            PackageManager.GET_SIGNING_CERTIFICATES.toLong()
+        else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES.toLong()
+        val info = Hidden.getPackageInfo(BinderPublisher.MANAGER_PACKAGE, flags, 0) ?: return null
+        val sig = if (Build.VERSION.SDK_INT >= 28)
+            info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+        else @Suppress("DEPRECATION") info.signatures?.firstOrNull()?.toByteArray()
+        sig ?: return null
+        MessageDigest.getInstance("SHA-256").digest(sig)
+            .joinToString("") { "%02x".format(it) }
+    }.getOrNull()
+}
