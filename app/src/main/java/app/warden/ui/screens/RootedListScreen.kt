@@ -81,7 +81,7 @@ private fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, onToggl
         Switch(checked = checked && enabled, enabled = enabled, onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = N.accent, checkedThumbColor = N.bg,
-                uncheckedTrackColor = N.surfaceHi, uncheckedBorderColor = N.ring,
+                uncheckedTrackColor = N.surfaceHi, uncheckedBorderColor = N.divider,
             ))
     }
 }

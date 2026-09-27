@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
@@ -73,7 +74,7 @@ private fun Toolbar(connected: Boolean, root: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Warden", style = T.display)
+            Text("Warden", style = T.h3)
             Text("privilege broker · audit · rooted list", style = T.mono)
         }
         Row(
@@ -89,23 +90,25 @@ private fun Toolbar(connected: Boolean, root: Boolean) {
 
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
+    // Nocturne `.seg`: a divider-ringed track; the selected option carries an
+    // inset accent ring + accent text rather than a filled ground.
     Row(
-        Modifier.fillMaxWidth().padding(12.dp).vCard(N.shapeMd).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            .clip(N.shapeMd).border(1.dp, N.divider, N.shapeMd),
     ) {
-        Tab.entries.forEach { t ->
+        Tab.entries.forEachIndexed { i, t ->
             val sel = t == current
-            Text(
-                t.label,
-                style = T.control.copy(color = if (sel) N.bg else N.textLabel),
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(N.shapeSm)
-                    .background(if (sel) N.accent else Color.Transparent)
+            if (i > 0) Box(Modifier.width(1.dp).height(44.dp).background(N.divider))
+            Box(
+                Modifier.weight(1f)
                     .clickable { onSelect(t) }
-                    .padding(vertical = 10.dp),
-            )
+                    .then(if (sel) Modifier.border(1.dp, N.accent, N.shapeMd) else Modifier)
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(t.label, style = T.control.copy(color = if (sel) N.accent else N.textLabel),
+                    textAlign = TextAlign.Center)
+            }
         }
     }
 }

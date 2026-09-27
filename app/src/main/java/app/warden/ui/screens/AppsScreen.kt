@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import app.warden.api.RootedEntry
 import app.warden.data.WardenClient
 import app.warden.ui.components.Tone
-import app.warden.ui.components.WChip
+import app.warden.ui.components.WButton
 import app.warden.ui.components.WTag
 import app.warden.ui.theme.*
 import kotlinx.coroutines.delay
@@ -67,12 +67,12 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (isGranted) {
-                WChip("Revoke", Tone.Danger) { WardenClient.revokeGrant(app.pkg); onChanged() }
+                WButton("Revoke", Tone.Danger) { WardenClient.revokeGrant(app.pkg); onChanged() }
             } else {
-                WChip("Grant broker", Tone.Accent) { WardenClient.setGrant(app.pkg, arrayOf("*")); onChanged() }
+                WButton("Grant broker", Tone.Accent) { WardenClient.setGrant(app.pkg, arrayOf("*")); onChanged() }
             }
-            WChip("+ Su") { WardenClient.setGrant(app.pkg, arrayOf("*", "exec")); onChanged() }
-            WChip("+ Rooted") {
+            WButton("+ Su") { WardenClient.setGrant(app.pkg, arrayOf("*", "exec")); onChanged() }
+            WButton("+ Rooted") {
                 WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true)); onChanged()
             }
         }
