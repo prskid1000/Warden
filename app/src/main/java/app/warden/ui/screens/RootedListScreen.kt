@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun RootedListScreen() {
-    val rootOk by produceState(false) { while (true) { value = WardenClient.rootAvailable; delay(1000) } }
+    val rootOk = app.warden.ui.ConnState.root
     var entries by remember { mutableStateOf(WardenClient.rootedList()) }
     LaunchedEffect(Unit) { while (true) { entries = WardenClient.rootedList(); delay(1500) } }
 

@@ -13,6 +13,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.warden.api.RootedEntry
 import app.warden.data.WardenClient
+import app.warden.ui.ConnState
 import app.warden.ui.components.Tone
 import app.warden.ui.components.WButton
 import app.warden.ui.components.WTag
@@ -26,7 +27,7 @@ fun AppsScreen() {
     val ctx = LocalContext.current
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var granted by remember { mutableStateOf(grantedPkgs()) }
-    val connected by produceState(false) { while (true) { value = WardenClient.connected; delay(1000) } }
+    val connected = ConnState.connected
     val apps = remember {
         val pm = ctx.packageManager
         pm.getInstalledApplications(0)
@@ -66,14 +67,19 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
             if (isGranted) WTag("granted", Tone.Ok)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // One grant ("*") already covers everything the app can do through the
+            // broker, including su. The rooted-list ("Make rooted") is layer-C
+            // spoofing and only exists on a rooted device.
             if (isGranted) {
                 WButton("Revoke", Tone.Danger) { WardenClient.revokeGrant(app.pkg); onChanged() }
             } else {
-                WButton("Grant broker", Tone.Accent) { WardenClient.setGrant(app.pkg, arrayOf("*")); onChanged() }
+                WButton("Grant access", Tone.Accent) { WardenClient.setGrant(app.pkg, arrayOf("*")); onChanged() }
             }
-            WButton("+ Su") { WardenClient.setGrant(app.pkg, arrayOf("*", "exec")); onChanged() }
-            WButton("+ Rooted") {
-                WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true)); onChanged()
+            if (ConnState.root) {
+                WButton("Make rooted") {
+                    WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true, spoofDetection = true, propsProfile = "rooted"))
+                    onChanged()
+                }
             }
         }
     }

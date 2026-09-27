@@ -4,6 +4,8 @@
     <!-- Loopback socket to the device's own adbd for PC-free server start. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission"
         xmlns:tools="http://schemas.android.com/tools" />
@@ -25,6 +27,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".adb.PairService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="adb_pairing" />
+        </service>
 
         <!-- Inline-reply target for the pairing code (kept off-UI so the system
              pairing dialog stays open and the code stays valid). -->

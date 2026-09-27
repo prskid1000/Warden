@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.RemoteInput
-import kotlinx.coroutines.runBlocking
 
 /**
  * Receives the 6-digit code typed into the pairing notification. Because the
@@ -22,28 +21,9 @@ class PairReplyReceiver : BroadcastReceiver() {
             PairNotification.prompt(context)
             return
         }
+        // Hand off to a foreground service — the pair+connect chain can exceed a
+        // broadcast receiver's ~10s window, which is why it silently failed before.
         PairNotification.result(context, "Pairing…", ongoing = true)
-        val pending = goAsync()
-        Thread {
-            try {
-                val r = runBlocking { AdbStarter.pairAndStart(context.applicationContext, code) }
-                val msg = r.fold(
-                    onSuccess = {
-                        when (it) {
-                            is AdbStarter.Outcome.Launched -> "Paired — server started ✓"
-                            AdbStarter.Outcome.PairNeeded -> "Paired, but couldn't connect. Tap Start again."
-                        }
-                    },
-                    onFailure = { it.message ?: "Pairing failed." },
-                )
-                val ok = r.getOrNull() is AdbStarter.Outcome.Launched
-                if (ok) PairNotification.clear(context) else {
-                    PairNotification.result(context, msg, ongoing = true)
-                    PairNotification.prompt(context)   // let them retry with a fresh code
-                }
-            } finally {
-                pending.finish()
-            }
-        }.start()
+        PairService.start(context.applicationContext, code)
     }
 }

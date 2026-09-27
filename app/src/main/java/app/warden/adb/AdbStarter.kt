@@ -43,12 +43,20 @@ object AdbStarter {
             ensureConscrypt()
             val mgr = AdbConnectionManager.getInstance(ctx)
             try {
-                if (!mgr.connectTls(ctx, 8000)) return@runCatching Outcome.PairNeeded
+                android.util.Log.i("Warden", "connectTls…")
+                if (!mgr.connectTls(ctx, 8000)) {
+                    android.util.Log.w("Warden", "connectTls returned false")
+                    return@runCatching Outcome.PairNeeded
+                }
             } catch (e: AdbPairingRequiredException) {
+                android.util.Log.w("Warden", "pairing required")
                 return@runCatching Outcome.PairNeeded
             }
-            Outcome.Launched(launch(ctx, mgr))
-        }
+            android.util.Log.i("Warden", "connected; launching server")
+            val out = launch(ctx, mgr)
+            android.util.Log.i("Warden", "launch output: ${out.take(200)}")
+            Outcome.Launched(out)
+        }.onFailure { android.util.Log.e("Warden", "start failed", it) }
     }
 
     suspend fun pairAndStart(ctx: Context, code: String): Result<Outcome> =
@@ -67,9 +75,12 @@ object AdbStarter {
 
     private fun launch(ctx: Context, mgr: AbsAdbConnectionManager): String {
         val apk = ctx.applicationInfo.sourceDir
-        val cmd = "mkdir -p $DATA_DIR; (CLASSPATH=$apk nohup app_process /system/bin " +
-            "--nice-name=warden_server app.warden.server.Starter $DATA_DIR " +
-            ">$DATA_DIR/out.log 2>&1 </dev/null &) ; echo warden-launched"
+        // setsid puts the server in its own session, so it survives libadb tearing
+        // down the shell stream (which SIGKILLs the stream's process group).
+        val cmd = "mkdir -p $DATA_DIR; " +
+            "CLASSPATH=$apk setsid app_process /system/bin --nice-name=warden_server " +
+            "app.warden.server.Starter $DATA_DIR >$DATA_DIR/out.log 2>&1 </dev/null & " +
+            "echo warden-launched; sleep 1; cat $DATA_DIR/out.log 2>/dev/null | head -3"
         val stream = mgr.openStream("shell:$cmd")
         return stream.openInputStream().bufferedReader().readText()
     }

@@ -43,12 +43,10 @@ private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics
 @Composable
 private fun WardenApp() {
     var tab by remember { mutableStateOf(Tab.BOOTSTRAP) }
-    val connected by produceState(false) {
-        while (true) { WardenClient.connect(); value = WardenClient.connected; delay(1000) }
-    }
-    val root by produceState(false) {
-        while (true) { value = WardenClient.rootAvailable; delay(1000) }
-    }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { ConnState.ensurePolling(scope) }
+    val connected = ConnState.connected
+    val root = ConnState.root
     // Section C (the rooted list / spoofing) only exists on a rooted device, so
     // its tab is hidden unless the broker is running as root.
     val tabs = Tab.entries.filter { it != Tab.ROOTED || root }
@@ -84,7 +82,7 @@ private fun Toolbar(connected: Boolean, root: Boolean) {
     ) {
         Column(Modifier.weight(1f)) {
             Text("Warden", style = T.h3)
-            Text("privilege broker · audit · rooted list", style = T.mono)
+            Text("privilege broker · audit", style = T.mono)
         }
         Row(
             Modifier.vCard(N.shapeTag).padding(horizontal = 10.dp, vertical = 6.dp),

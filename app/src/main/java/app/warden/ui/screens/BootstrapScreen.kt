@@ -33,10 +33,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun BootstrapScreen() {
-    val connected by produceState(false) {
-        while (true) { WardenClient.connect(); value = WardenClient.connected; delay(1000) }
-    }
-    val root by produceState(false) { while (true) { value = WardenClient.rootAvailable; delay(1000) } }
+    val connected = app.warden.ui.ConnState.connected
+    val root = app.warden.ui.ConnState.root
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())

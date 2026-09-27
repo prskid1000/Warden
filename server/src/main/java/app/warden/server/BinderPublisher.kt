@@ -19,12 +19,16 @@ object BinderPublisher {
     fun publish(binder: IBinder) {
         runCatching { ServiceManagerCompat.addService("warden", binder) }
             .onFailure { Log.w(TAG, "addService unavailable (non-root start): ${it.message}") }
-        // Rebroadcast for a short window so the manager receives the binder even
-        // if it is opened a few seconds after the adb command is run.
+        // Keep offering the binder indefinitely: the manager app can be killed and
+        // relaunched while the (separate) server process keeps running, and on a
+        // non-root start ServiceManager is blocked by SELinux, so this broadcast is
+        // the only way a restarted manager re-acquires the binder. Fast at first,
+        // then a steady low-frequency heartbeat.
         Thread({
-            repeat(15) {
+            var i = 0
+            while (true) {
                 ManagerHandshake.deliver(binder)
-                Thread.sleep(2000)
+                Thread.sleep(if (i++ < 15) 2000L else 5000L)
             }
         }, "warden-handshake").apply { isDaemon = true }.start()
     }
