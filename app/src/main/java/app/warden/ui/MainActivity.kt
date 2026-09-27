@@ -46,7 +46,6 @@ private fun WardenApp() {
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { ConnState.ensurePolling(scope) }
     val connected = ConnState.connected
-    val root = ConnState.root
 
     // Shared start controller (drives the Home panel and the toolbar chip).
     var working by remember { mutableStateOf(false) }
@@ -81,15 +80,15 @@ private fun WardenApp() {
     val startUi = StartUi(working, needCode, msg, ::doStart, ::doStop)
 
     Column(Modifier.fillMaxSize().background(N.bg).windowInsetsPadding(WindowInsets.systemBars)) {
-        Toolbar(connected, root, working, onStart = ::doStart, onStop = ::doStop)
+        Toolbar(connected, working, onStart = ::doStart, onStop = ::doStop)
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            DashboardScreen(connected, root, startUi)
+            DashboardScreen(connected, startUi)
         }
     }
 }
 
 @Composable
-private fun Toolbar(connected: Boolean, root: Boolean, working: Boolean,
+private fun Toolbar(connected: Boolean, working: Boolean,
                    onStart: () -> Unit, onStop: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
@@ -99,13 +98,9 @@ private fun Toolbar(connected: Boolean, root: Boolean, working: Boolean,
             Text("Warden", style = T.h3)
             Text("privilege broker · audit", style = T.mono)
         }
-        // Single control lives here: Stop when running, Start when not. When
-        // running, a small "C" badge shows whether layer-C (root spoofing) is live.
+        // Single control: Stop when running, Start when not.
         if (connected) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (root) app.warden.ui.components.WTag("root", app.warden.ui.components.Tone.Ok)
-                ControlChip("Stop", N.danger, enabled = true, onClick = onStop)
-            }
+            ControlChip("Stop", N.danger, enabled = true, onClick = onStop)
         } else {
             ControlChip(if (working) "starting…" else "Start", N.accent, enabled = !working, onClick = onStart)
         }

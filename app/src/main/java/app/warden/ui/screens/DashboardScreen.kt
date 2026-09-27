@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.rotate
-import app.warden.api.RootedEntry
 import app.warden.data.WardenClient
 import app.warden.ui.StartUi
 import app.warden.ui.components.*
@@ -39,11 +38,10 @@ private data class AppRow(val pkg: String, val label: String)
  * are present but disabled without root.
  */
 @Composable
-fun DashboardScreen(connected: Boolean, root: Boolean, start: StartUi) {
+fun DashboardScreen(connected: Boolean, start: StartUi) {
     val ctx = LocalContext.current
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var granted by remember { mutableStateOf(grantedPkgs()) }
-    var rooted by remember { mutableStateOf(rootedPkgs()) }
     var appsOpen by remember { mutableStateOf(true) }
     var actOpen by remember { mutableStateOf(false) }
     val lines = if (connected) rememberAuditLines() else emptyList()
@@ -54,7 +52,7 @@ fun DashboardScreen(connected: Boolean, root: Boolean, start: StartUi) {
             .map { AppRow(it.packageName, pm.getApplicationLabel(it).toString()) }
             .sortedBy { it.label.lowercase() }
     }
-    fun refresh() { granted = grantedPkgs(); rooted = rootedPkgs() }
+    fun refresh() { granted = grantedPkgs() }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -66,7 +64,7 @@ fun DashboardScreen(connected: Boolean, root: Boolean, start: StartUi) {
             return@LazyColumn
         }
 
-        item { StatRow(root, granted.size, lines.size) }
+        item { StatRow(granted.size, lines.size) }
 
         // ── Apps ──────────────────────────────────────────────
         item {
@@ -83,7 +81,7 @@ fun DashboardScreen(connected: Boolean, root: Boolean, start: StartUi) {
             items(apps.filter {
                 query.text.isBlank() || it.label.contains(query.text, true) || it.pkg.contains(query.text, true)
             }, key = { it.pkg }) { app ->
-                AppCard(app, app.pkg in granted, app.pkg in rooted, root, ::refresh)
+                AppCard(app, app.pkg in granted, ::refresh)
             }
         }
 
@@ -107,12 +105,11 @@ fun DashboardScreen(connected: Boolean, root: Boolean, start: StartUi) {
 }
 
 @Composable
-private fun StatRow(root: Boolean, access: Int, events: Int) {
+private fun StatRow(access: Int, events: Int) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatTile("Mode", if (root) "root" else "shell", if (root) N.ok else N.warn, Modifier.weight(1f))
-        StatTile("Access", "$access", N.accent, Modifier.weight(1f))
-        StatTile("Events", "$events", N.accent2, Modifier.weight(1f))
+        StatTile("Apps with access", "$access", N.accent, Modifier.weight(1f))
+        StatTile("Events logged", "$events", N.accent2, Modifier.weight(1f))
     }
 }
 
@@ -154,34 +151,18 @@ private fun Chevron(expanded: Boolean) {
 }
 
 @Composable
-private fun AppCard(app: AppRow, isGranted: Boolean, isRooted: Boolean, root: Boolean, onChanged: () -> Unit) {
-    Column(Modifier.fillMaxWidth().vCard().padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Monogram(app.label)
-            Column(Modifier.weight(1f)) {
-                Text(app.label, style = T.cardTitle, maxLines = 1)
-                Text(app.pkg, style = T.monoSmall, maxLines = 1)
-            }
-            NSwitch(isGranted) { on ->
-                if (on) WardenClient.setGrant(app.pkg, arrayOf("*"))
-                else { WardenClient.revokeGrant(app.pkg); if (isRooted) WardenClient.setRooted(RootedEntry(app.pkg)) }
-                onChanged()
-            }
+private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
+    Row(Modifier.fillMaxWidth().vCard().padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Monogram(app.label)
+        Column(Modifier.weight(1f)) {
+            Text(app.label, style = T.cardTitle, maxLines = 1)
+            Text(app.pkg, style = T.monoSmall, maxLines = 1)
         }
-        AnimatedVisibility(isGranted) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Appear rooted to this app", style = T.body.copy(color = if (root) N.text else N.textMuted))
-                    Text(if (root) "Spoof root detection + give su" else "Requires a rooted device", style = T.monoSmall)
-                }
-                NSwitch(isRooted && root, enabled = root) { on ->
-                    WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true,
-                        spoofDetection = on, propsProfile = if (on) "rooted" else ""))
-                    onChanged()
-                }
-            }
+        NSwitch(isGranted) { on ->
+            if (on) WardenClient.setGrant(app.pkg, arrayOf("*")) else WardenClient.revokeGrant(app.pkg)
+            onChanged()
         }
     }
 }
@@ -248,6 +229,3 @@ private fun grantedPkgs(): Set<String> {
     return buildSet { for (i in 0 until arr.length()) add(arr.getJSONObject(i).getString("pkg")) }
 }
 
-private fun rootedPkgs(): Set<String> = buildSet {
-    WardenClient.rootedList().forEach { if (it.spoofDetection) add(it.pkg) }
-}
