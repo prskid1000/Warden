@@ -94,10 +94,7 @@ private fun Toolbar(connected: Boolean, working: Boolean,
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text("Warden", style = T.h3)
-            Text("privilege broker · audit", style = T.mono)
-        }
+        Text("Warden", style = T.h3, modifier = Modifier.weight(1f))
         // Single control: Stop when running, Start when not.
         if (connected) {
             ControlChip("Stop", N.danger, enabled = true, onClick = onStop)

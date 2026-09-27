@@ -53,11 +53,15 @@ fun DashboardScreen(connected: Boolean, start: StartUi) {
     fun refresh() { granted = grantedPkgs() }
 
     if (!connected) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) { OfflinePanel(start) }
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            BatteryNotice()
+            OfflinePanel(start)
+        }
         return
     }
 
     Column(Modifier.fillMaxSize()) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { BatteryNotice() }
         SegTabs(page, granted.size, lines.size) { page = it }
         when (page) {
             Page.APPS -> LazyColumn(
@@ -135,6 +139,37 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun BatteryNotice() {
+    val ctx = LocalContext.current
+    val ok by produceState(batteryOk(ctx)) {
+        while (true) { value = batteryOk(ctx); kotlinx.coroutines.delay(2000) }
+    }
+    if (ok) return
+    Row(Modifier.fillMaxWidth().vCard().padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("Allow unrestricted battery", style = T.cardTitle)
+            Text("Keeps Warden reachable in the background (Doze / battery saver).",
+                style = T.bodySmall.copy(color = N.textMuted))
+        }
+        WButton("Allow", Tone.Accent) {
+            runCatching {
+                ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:" + ctx.packageName)))
+            }.onFailure {
+                ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+    }
+}
+
+private fun batteryOk(ctx: android.content.Context): Boolean =
+    runCatching {
+        ctx.getSystemService(android.os.PowerManager::class.java)
+            .isIgnoringBatteryOptimizations(ctx.packageName)
+    }.getOrDefault(true)
 
 @Composable
 private fun Monogram(label: String) {
