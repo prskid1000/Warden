@@ -92,10 +92,7 @@ private fun WardenApp() {
 private fun Toolbar(connected: Boolean, root: Boolean, working: Boolean,
                    onStart: () -> Unit, onStop: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
-                0f to N.section.copy(alpha = 0.45f), 1f to Color.Transparent))
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
