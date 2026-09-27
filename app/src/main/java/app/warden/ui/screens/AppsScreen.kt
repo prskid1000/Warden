@@ -1,34 +1,32 @@
 package app.warden.ui.screens
 
-import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.warden.api.RootedEntry
 import app.warden.data.WardenClient
-import app.warden.ui.theme.N
+import app.warden.ui.components.Tone
+import app.warden.ui.components.WChip
+import app.warden.ui.components.WTag
+import app.warden.ui.theme.*
+import kotlinx.coroutines.delay
 
 private data class AppRow(val pkg: String, val label: String)
 
-/**
- * Installed-app list with per-app grant management. Deny-by-default: nothing is
- * granted until toggled here. "Broker" grants API access; "Su" adds the exec
- * scope; "Rooted" adds the app to the rooted list (see the Rooted tab for the
- * layer-C spoof toggle).
- */
 @Composable
 fun AppsScreen() {
     val ctx = LocalContext.current
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(TextFieldValue("")) }
     var granted by remember { mutableStateOf(grantedPkgs()) }
+    val connected by produceState(false) { while (true) { value = WardenClient.connected; delay(1000) } }
     val apps = remember {
         val pm = ctx.packageManager
         pm.getInstalledApplications(0)
@@ -37,23 +35,21 @@ fun AppsScreen() {
             .sortedBy { it.label.lowercase() }
     }
 
-    val connected by androidx.compose.runtime.produceState(false) {
-        while (true) { value = WardenClient.connected; kotlinx.coroutines.delay(1000) }
-    }
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        if (!connected) {
-            NotConnected(); return
-        }
-        OutlinedTextField(query, { query = it }, singleLine = true,
-            label = { Text("search apps") }, modifier = Modifier.fillMaxWidth())
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        if (!connected) { NotConnected(); return }
+        Overline("Grant access · ${granted.size} granted")
         Spacer(Modifier.height(10.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.fillMaxWidth().vInset().padding(horizontal = 12.dp, vertical = 10.dp)) {
+            if (query.text.isEmpty()) Text("Search apps", style = T.body.copy(color = N.textMuted))
+            BasicTextField(query, { query = it }, singleLine = true,
+                textStyle = T.body, cursorBrush = androidx.compose.ui.graphics.SolidColor(N.accent))
+        }
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(apps.filter {
-                query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true)
+                query.text.isBlank() || it.label.contains(query.text, true) || it.pkg.contains(query.text, true)
             }, key = { it.pkg }) { app ->
-                AppCard(app, app.pkg in granted) {
-                    granted = grantedPkgs()
-                }
+                AppCard(app, app.pkg in granted) { granted = grantedPkgs() }
             }
         }
     }
@@ -61,38 +57,35 @@ fun AppsScreen() {
 
 @Composable
 private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
-    Surface(color = N.surface, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.padding(12.dp)) {
-            Text(app.label, color = N.text, fontSize = 15.sp)
-            Text(app.pkg, color = N.textMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip(if (isGranted) "Revoke" else "Grant broker") {
-                    if (isGranted) WardenClient.revokeGrant(app.pkg)
-                    else WardenClient.setGrant(app.pkg, arrayOf("*"))
-                    onChanged()
-                }
-                Chip("+ Su") {
-                    WardenClient.setGrant(app.pkg, arrayOf("*", "exec")); onChanged()
-                }
-                Chip("Add to rooted") {
-                    WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true))
-                    onChanged()
-                }
+    Column(Modifier.fillMaxWidth().vCard().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(app.label, style = T.cardTitle)
+                Text(app.pkg, style = T.monoSmall)
+            }
+            if (isGranted) WTag("granted", Tone.Ok)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (isGranted) {
+                WChip("Revoke", Tone.Danger) { WardenClient.revokeGrant(app.pkg); onChanged() }
+            } else {
+                WChip("Grant broker", Tone.Accent) { WardenClient.setGrant(app.pkg, arrayOf("*")); onChanged() }
+            }
+            WChip("+ Su") { WardenClient.setGrant(app.pkg, arrayOf("*", "exec")); onChanged() }
+            WChip("+ Rooted") {
+                WardenClient.setRooted(RootedEntry(app.pkg, giveBroker = true, giveSu = true)); onChanged()
             }
         }
     }
 }
 
 @Composable
-private fun Chip(label: String, onClick: () -> Unit) {
-    AssistChip(onClick = onClick, label = { Text(label, fontSize = 12.sp) })
-}
-
-@Composable
 private fun NotConnected() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Broker not connected — see the Start tab.", color = N.textMuted, fontSize = 13.sp)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Broker not connected", style = T.subtitle.copy(color = N.textMuted))
+        Spacer(Modifier.height(4.dp))
+        Text("See the Start tab", style = T.bodySmall.copy(color = N.textMuted))
     }
 }
 
