@@ -41,7 +41,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
+    }
+
     buildTypes {
         // Same signing key for debug and release, so a server started against
         // either build authenticates the manager (cert pinning in Starter).
@@ -68,6 +69,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 
     // PC-free server start: an in-app ADB client that pairs with the device's
     // own adbd over Wireless Debugging (Android 11+) and runs the bootstrap.

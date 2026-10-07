@@ -148,6 +148,29 @@ The non-root path is verified end-to-end on real Android 17 hardware:
 So both start paths now work: **root** via ServiceManager (+ sepolicy rule) and
 **non-root** via the broadcast handshake.
 
+## Keeping the manager attached — ManagerTether (2026-10-07, same device)
+
+The handshake used to rebroadcast on a timer (2 s, then 5 s forever), so a
+manager restarted by a client's `getBinder` call answered with no binder for up
+to 5 s. Now nothing polls:
+
+- The server holds an **external provider handle** on `app.warden.broker`
+  (`getContentProviderExternal`, as `adb shell content` does). Taking it starts
+  the manager if needed, and the binder is broadcast as soon as it returns.
+- While held, AMS ranks the manager `fg … (ext-provider)`, oom adj 0, so it
+  isn't killed or frozen when swiped away.
+- The provider binder's **death** triggers a fresh handle and delivery. Force-stop
+  and `kill -9` both re-attach in ~0.4 s. Three deaths within 10 s of each attach
+  start a capped backoff, so a crash loop isn't restarted tightly.
+- `getBinder` waits (up to 2 s) for the delivery instead of returning empty.
+- The UI's connection state follows `attach`/binder death, and the audit feed is
+  pushed through `IWarden.watchAudit(IAuditListener)` instead of re-reading the
+  log.
+
+Ruled out: a ContentObserver the manager could notify. ContentService rejects
+observers from processes AMS doesn't track (`Failed to find PID`), and a
+manager that targets O+ can't notify an authority that has no provider.
+
 ## PC-free server start (Wireless Debugging)
 
 The Start tab can launch the broker with no PC and no root, using an in-app ADB

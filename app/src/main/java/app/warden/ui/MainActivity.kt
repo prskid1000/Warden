@@ -45,8 +45,7 @@ class MainActivity : ComponentActivity() {
 private fun WardenApp() {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) { ConnState.ensurePolling(scope) }
-    val connected = ConnState.connected
+    val connected = WardenClient.state.collectAsState().value.connected
 
     // Shared start controller (drives the Home panel and the toolbar chip).
     var working by remember { mutableStateOf(false) }

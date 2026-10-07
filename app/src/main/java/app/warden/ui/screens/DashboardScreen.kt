@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.warden.data.WardenClient
 import app.warden.ui.StartUi
 import app.warden.ui.components.*
@@ -143,8 +144,12 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
 @Composable
 private fun BatteryNotice() {
     val ctx = LocalContext.current
-    val ok by produceState(batteryOk(ctx)) {
-        while (true) { value = batteryOk(ctx); kotlinx.coroutines.delay(2000) }
+    // No broadcast reports this exemption changing; it only changes in Settings,
+    // so re-read it whenever the user comes back from there.
+    var ok by remember { mutableStateOf(batteryOk(ctx)) }
+    LifecycleResumeEffect(Unit) {
+        ok = batteryOk(ctx)
+        onPauseOrDispose { }
     }
     if (ok) return
     Row(Modifier.fillMaxWidth().vCard().padding(14.dp),

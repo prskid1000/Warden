@@ -1,5 +1,6 @@
 package app.warden.api;
 
+import app.warden.api.IAuditListener;
 import app.warden.api.IRemoteProcess;
 
 /**
@@ -40,4 +41,11 @@ interface IWarden {
 
     /** Manager-only: clear the audit log. */
     void clearAudit();
+
+    // Appended, never inserted: client apps carry their own copy of this file,
+    // and transaction codes follow declaration order.
+
+    /** Manager-only: push each new audit line to [listener] until unwatched or it dies. */
+    void watchAudit(IAuditListener listener);
+    void unwatchAudit(IAuditListener listener);
 }

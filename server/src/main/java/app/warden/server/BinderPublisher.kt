@@ -19,16 +19,18 @@ object BinderPublisher {
     fun publish(binder: IBinder) {
         runCatching { ServiceManagerCompat.addService("warden", binder) }
             .onFailure { Log.w(TAG, "addService unavailable (non-root start): ${it.message}") }
-        // Keep offering the binder indefinitely: the manager app can be killed and
-        // relaunched while the (separate) server process keeps running, and on a
-        // non-root start ServiceManager is blocked by SELinux, so this broadcast is
-        // the only way a restarted manager re-acquires the binder. Fast at first,
-        // then a steady low-frequency heartbeat.
+        // The manager can be killed and relaunched while this (separate) process
+        // keeps running, and on a non-root start ServiceManager is blocked by
+        // SELinux, so the broadcast is the only way a restarted manager gets the
+        // binder back. The tether delivers it on every (re)start of the manager.
+        if (ManagerTether.hold(binder)) return
+
+        // Can't hold the manager on this framework: offer the binder on a heartbeat.
+        ManagerHandshake.deliver(binder)
         Thread({
-            var i = 0
             while (true) {
+                Thread.sleep(5000L)
                 ManagerHandshake.deliver(binder)
-                Thread.sleep(if (i++ < 15) 2000L else 5000L)
             }
         }, "warden-handshake").apply { isDaemon = true }.start()
     }

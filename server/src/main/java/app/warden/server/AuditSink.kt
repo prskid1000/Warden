@@ -33,7 +33,7 @@ class AuditSink(private val dir: File) {
 
     private val file = File(dir, "audit.jsonl").apply { parentFile?.mkdirs() }
     private val queue = LinkedBlockingQueue<Event>()
-    private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
+    private val listeners = CopyOnWriteArrayList<Listener>()
     private val maxBytes = 8L * 1024 * 1024
     @Volatile private var prevHash = seedHash()
 
@@ -63,15 +63,20 @@ class AuditSink(private val dir: File) {
         if (file.length() > maxBytes) rotate()
         file.appendText(line + "\n")
         prevHash = h
-        listeners.forEach { runCatching { it(line) } }
+        listeners.forEach { runCatching { it.onLine(line) } }
     }
 
     private fun rotate() {
         File(dir, "audit.1.jsonl").let { if (it.exists()) it.delete(); file.renameTo(it) }
     }
 
-    fun subscribe(cb: (String) -> Unit): () -> Unit {
-        listeners.add(cb); return { listeners.remove(cb) }
+    interface Listener {
+        fun onLine(line: String)
+        fun onCleared()
+    }
+
+    fun subscribe(l: Listener): () -> Unit {
+        listeners.add(l); return { listeners.remove(l) }
     }
 
     fun path(): String = file.absolutePath
@@ -85,6 +90,7 @@ class AuditSink(private val dir: File) {
             File(dir, "audit.1.jsonl").takeIf { it.exists() }?.delete()
         }
         prevHash = "0".repeat(64)
+        listeners.forEach { runCatching { it.onCleared() } }
     }
 
     private fun seedHash(): String =

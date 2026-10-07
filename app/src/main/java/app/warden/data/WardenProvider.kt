@@ -5,16 +5,17 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
-import android.os.IBinder
 
 /**
- * Two jobs:
- *  1. Receives the broker binder from the server on the ADB-start path (the
- *     server's ManagerHandshake calls "deliverBinder" here) and hands it to
- *     WardenClient.
- *  2. Relays that binder to granted client apps that call "getBinder" — so a
- *     third-party app links :api and receives the broker without touching ADB.
- *     The broker enforces the caller's grant on every call regardless.
+ * Relays the broker binder to granted client apps that call "getBinder" — so a
+ * third-party app links :api and receives the broker without touching ADB. The
+ * broker enforces the caller's grant on every call regardless.
+ *
+ * While the server runs it holds an external handle on this provider, which
+ * keeps this process alive and restarts it if it dies, delivering the binder each
+ * time (see the server's ManagerTether). A client can still arrive in the moment
+ * between a restart and that delivery, so "getBinder" waits for it rather than
+ * returning empty.
  */
 class WardenProvider : ContentProvider() {
 
@@ -24,13 +25,11 @@ class WardenProvider : ContentProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? = when (method) {
-        "deliverBinder" -> {
-            extras?.getBinder("binder")?.let { delivered = it; WardenClient.attach(it) }
-            Bundle()
+        // Runs on a binder thread, so waiting here doesn't block the broadcast
+        // that delivers the binder (main thread).
+        "getBinder" -> Bundle().apply {
+            putBinder("binder", WardenClient.awaitBinder(HANDSHAKE_WAIT_MS))
         }
-        // Relay the live broker binder to a client app (e.g. Sundown). The broker
-        // still enforces the caller's grant on every call, so this is safe.
-        "getBinder" -> Bundle().apply { putBinder("binder", WardenClient.rawBinder() ?: delivered) }
         else -> null
     }
 
@@ -40,5 +39,9 @@ class WardenProvider : ContentProvider() {
     override fun delete(u: Uri, s: String?, sa: Array<String>?) = 0
     override fun update(u: Uri, v: ContentValues?, s: String?, sa: Array<String>?) = 0
 
-    companion object { @Volatile private var delivered: IBinder? = null }
+    companion object {
+        // The handshake normally lands in tens of ms; this bound is only reached
+        // when the server isn't running, and is how long a client waits to learn that.
+        private const val HANDSHAKE_WAIT_MS = 2000L
+    }
 }

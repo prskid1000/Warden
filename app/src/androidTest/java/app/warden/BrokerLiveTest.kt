@@ -5,6 +5,7 @@ import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.warden.api.IAuditListener
 import app.warden.api.IRemoteProcess
 import app.warden.api.IWarden
 import app.warden.api.WardenSu
@@ -16,6 +17,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Live checks against a running broker on a real device. Start the broker from
@@ -30,15 +33,10 @@ class BrokerLiveTest {
 
     @Before fun bind() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        // A freshly (re)started app only gets the binder on the broker's next
-        // handshake heartbeat (every 5 s), so poll briefly.
-        var binder: IBinder? = null
-        val deadline = System.currentTimeMillis() + 10_000
-        while (binder?.isBinderAlive != true && System.currentTimeMillis() < deadline) {
-            binder = ctx.contentResolver.call(Uri.parse("content://app.warden.broker"), "getBinder", null, null)
-                ?.getBinder("binder")
-            if (binder?.isBinderAlive != true) Thread.sleep(250)
-        }
+        // A freshly (re)started app has no binder yet; the provider says hello to
+        // the broker and waits for its handshake before answering.
+        val binder: IBinder? = ctx.contentResolver.call(Uri.parse("content://app.warden.broker"), "getBinder", null, null)
+            ?.getBinder("binder")
         assumeTrue("broker not running â€” tap Start first", binder?.isBinderAlive == true)
         warden = IWarden.Stub.asInterface(binder)
     }
@@ -87,6 +85,22 @@ class BrokerLiveTest {
         assertTrue("audit missing $marker", log.contains(marker))
     }
 
+    @Test fun auditLinesArePushed() {
+        val marker = "warden-audit-push-${System.nanoTime()}"
+        val seen = CountDownLatch(1)
+        val listener = object : IAuditListener.Stub() {
+            override fun onLine(line: String) { if (line.contains(marker)) seen.countDown() }
+            override fun onCleared() = Unit
+        }
+        warden.watchAudit(listener)
+        try {
+            run("sh", "-c", "echo $marker")
+            assertTrue("audit line not pushed", seen.await(5, TimeUnit.SECONDS))
+        } finally {
+            warden.unwatchAudit(listener)
+        }
+    }
+
     @Test fun grantsAreReadable() {
         assertNotNull(warden.grantsJson())
     }
@@ -94,7 +108,7 @@ class BrokerLiveTest {
     /** Runs the real shim binary from this app's process, as a client app would. */
     private fun su(cmd: String): Pair<Int, String> {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        assumeTrue("shim not extracted — run with -Pwarden.suTest",
+        assumeTrue("shim not extracted ï¿½ run with -Pwarden.suTest",
             File(ctx.applicationInfo.nativeLibraryDir, "libwardensu.so").exists())
         val bin = WardenSu.install(ctx)
         val p = ProcessBuilder(File(bin, "su").path, "-c", cmd).redirectErrorStream(true).start()

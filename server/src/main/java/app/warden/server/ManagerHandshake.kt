@@ -57,7 +57,7 @@ object ManagerHandshake {
         Log.i(TAG, "binder broadcast sent to ${WardenContract.MANAGER_PACKAGE}")
     }
 
-    private fun activityManager(): Any? = runCatching {
+    fun activityManager(): Any? = runCatching {
         // API 26+: ActivityManager.getService()
         Class.forName("android.app.ActivityManager")
             .getMethod("getService").invoke(null)

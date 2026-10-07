@@ -5,6 +5,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import app.warden.api.IAuditListener
 import app.warden.api.IRemoteProcess
 import app.warden.api.IWarden
 import org.json.JSONArray
@@ -115,6 +116,28 @@ class WardenService(
     }
 
     override fun clearAudit() { managerOnly(); audit.clear() }
+
+    // Keyed by the listener's binder: the proxy object differs per call.
+    private val watchers = java.util.concurrent.ConcurrentHashMap<IBinder, () -> Unit>()
+
+    override fun watchAudit(listener: IAuditListener) {
+        managerOnly()
+        val key = listener.asBinder()
+        if (watchers.containsKey(key)) return
+        val unsubscribe = audit.subscribe(object : AuditSink.Listener {
+            override fun onLine(line: String) = listener.onLine(line)
+            override fun onCleared() = listener.onCleared()
+        })
+        watchers[key] = unsubscribe
+        // The manager process can die without unwatching; drop it with the process.
+        runCatching { key.linkToDeath({ watchers.remove(key)?.invoke() }, 0) }
+            .onFailure { watchers.remove(key)?.invoke() }
+    }
+
+    override fun unwatchAudit(listener: IAuditListener) {
+        managerOnly()
+        watchers.remove(listener.asBinder())?.invoke()
+    }
 
     override fun shutdown() {
         managerOnly()
