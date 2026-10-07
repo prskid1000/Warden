@@ -1,5 +1,7 @@
 package app.warden.api
 
+import android.content.Context
+import android.net.Uri
 import android.os.IBinder
 import android.os.RemoteException
 
@@ -26,6 +28,21 @@ object Warden {
 
     @JvmStatic
     fun isReady(): Boolean = service?.asBinder()?.isBinderAlive == true
+
+    /**
+     * Fetch the broker binder from the manager app's provider. Returns whether
+     * Warden is now ready; false if the broker isn't running. Cheap when bound.
+     */
+    @JvmStatic
+    fun bind(context: Context): Boolean {
+        if (isReady()) return true
+        val binder = runCatching {
+            context.contentResolver.call(Uri.parse(WardenContract.PROVIDER_URI), "getBinder", null, null)
+                ?.getBinder("binder")
+        }.getOrNull()
+        onBinderReceived(binder)
+        return isReady()
+    }
 
     private fun require(): IWarden =
         service ?: throw IllegalStateException("Warden not bound; is the server running and granted?")

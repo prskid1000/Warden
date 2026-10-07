@@ -10,9 +10,8 @@
  * The broker audits every command it runs, so shim traffic shows up on the
  * Audit tab exactly like binder calls do.
  *
- * On a rooted device the Zygisk module bind-mounts this binary as /system/bin/su
- * inside rooted-list apps' mount namespaces (layer C); on ADB-only setups it is
- * dropped into the cooperating app's own files dir and prepended to PATH.
+ * In a cooperating app, WardenSu (in :api) ships this binary as libwardensu.so,
+ * links it as `su` in a dir the app prepends to PATH, and hosts the relay socket.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,17 +22,28 @@
 
 #define WARDEN_SOCK "warden_exec" /* abstract namespace socket the broker listens on */
 
-static int connect_broker(void) {
+static int connect_abstract(const char *name) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
     /* abstract socket: leading NUL */
     addr.sun_path[0] = '\0';
-    strncpy(addr.sun_path + 1, WARDEN_SOCK, sizeof(addr.sun_path) - 2);
-    socklen_t len = (socklen_t)(sizeof(sa_family_t) + 1 + strlen(WARDEN_SOCK));
+    strncpy(addr.sun_path + 1, name, sizeof(addr.sun_path) - 2);
+    socklen_t len = (socklen_t)(sizeof(sa_family_t) + 1 + strlen(name));
     if (connect(fd, (struct sockaddr *)&addr, len) < 0) { close(fd); return -1; }
     return fd;
+}
+
+/* Apps can't connect to the broker's socket (SELinux forbids app -> shell
+ * connectto), so inside an app we go through the relay the app hosts with
+ * WardenSu (same uid, same domain), which forwards over the broker binder.
+ * Callers that may reach the broker directly fall back to its socket. */
+static int connect_broker(void) {
+    char relay[64];
+    snprintf(relay, sizeof relay, "%s.%u", WARDEN_SOCK, (unsigned)getuid());
+    int fd = connect_abstract(relay);
+    return fd >= 0 ? fd : connect_abstract(WARDEN_SOCK);
 }
 
 int main(int argc, char **argv) {

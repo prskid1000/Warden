@@ -17,7 +17,7 @@ and the audit log is the accountability backstop.
 | Piece | What it does |
 |-------|--------------|
 | **Broker** | A service started with `shell` privileges (via ADB) that transacts against system services on behalf of granted apps. |
-| **`su` shim** | An optional `su` for cooperating apps, routed through the broker's exec socket (still no root — it runs with the broker's `shell` identity). |
+| **`su` shim** | An optional `su` for cooperating apps (`WardenSu.install` in `:api`). It talks to a relay inside the app, which forwards over the broker binder — apps can't reach the broker's socket directly (SELinux). Still no root: commands run with the broker's `shell` identity. |
 | **Audit log** | Append-only, hash-chained (tamper-evident) record of every call, tailing live in the app. |
 
 Security: signature-bound, scoped, expiring grants (deny-by-default), per-uid

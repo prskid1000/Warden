@@ -41,7 +41,8 @@ fun DashboardScreen(connected: Boolean, start: StartUi) {
     val ctx = LocalContext.current
     var page by remember { mutableStateOf(Page.APPS) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
-    var granted by remember { mutableStateOf(grantedPkgs()) }
+    // Keyed on connected: grants can only be read once the broker is attached.
+    var granted by remember(connected) { mutableStateOf(grantedPkgs()) }
     val lines = if (connected) rememberAuditLines() else emptyList()
     val apps = remember {
         val pm = ctx.packageManager
@@ -203,8 +204,17 @@ private fun OfflinePanel(start: StartUi) {
                 Step("1", "Open settings → Wireless debugging → \"Pair device with pairing code\". Keep it open.")
                 Step("2", "Swipe down and type the 6-digit code into the Warden notification (the code changes if you leave that screen).")
                 WButton("Open settings", Tone.Accent) {
-                    runCatching { ctx.startActivity(Intent("android.settings.ADB_WIRELESS_SETTINGS")) }
-                        .onFailure { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+                    // NEW_TASK keeps Settings out of Warden's back stack. The fallback
+                    // scrolls Developer options to (and highlights) the wireless row.
+                    val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    runCatching {
+                        ctx.startActivity(Intent("android.settings.ADB_WIRELESS_SETTINGS").addFlags(flags))
+                    }.onFailure {
+                        val args = android.os.Bundle().apply { putString(":settings:fragment_args_key", "toggle_adb_wireless") }
+                        ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(flags)
+                            .putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
+                            .putExtra(":settings:show_fragment_args", args))
+                    }
                 }
             }
             else -> Text("Tap Start (top-right) to run the broker on this phone — no computer needed.",

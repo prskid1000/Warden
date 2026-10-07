@@ -51,6 +51,11 @@ object AdbStarter {
             } catch (e: AdbPairingRequiredException) {
                 android.util.Log.w("Warden", "pairing required")
                 return@runCatching Outcome.PairNeeded
+            } catch (e: InterruptedException) {
+                // libadb's mDNS discovery timed out: adbd's wireless port isn't up.
+                throw IllegalStateException(
+                    if (!onWifi(ctx)) "Connect to Wi-Fi first — Android only runs Wireless debugging on Wi-Fi (not on mobile data or your own hotspot)."
+                    else "Wireless debugging is off. Turn it on in Developer options → Wireless debugging, then tap Start.", e)
             }
             android.util.Log.i("Warden", "connected; launching server")
             val out = launch(ctx, mgr)
@@ -77,12 +82,34 @@ object AdbStarter {
         val apk = ctx.applicationInfo.sourceDir
         // setsid puts the server in its own session, so it survives libadb tearing
         // down the shell stream (which SIGKILLs the stream's process group).
-        val cmd = "mkdir -p $DATA_DIR; " +
+        // chmod repairs a data dir that lost its search bit (seen in the field:
+        // drw-r--r--), which otherwise makes the out.log redirect fail and the
+        // server never start.
+        val cmd = "mkdir -p $DATA_DIR; chmod -R u+rwX $DATA_DIR; " +
             "CLASSPATH=$apk setsid app_process /system/bin --nice-name=warden_server " +
             "app.warden.server.Starter $DATA_DIR >$DATA_DIR/out.log 2>&1 </dev/null & " +
             "echo warden-launched; sleep 1; cat $DATA_DIR/out.log 2>/dev/null | head -3"
         val stream = mgr.openStream("shell:$cmd")
-        return stream.openInputStream().bufferedReader().readText()
+        // libadb reports end-of-stream as IOException("Stream closed."), so keep
+        // what was read instead of failing a launch that succeeded.
+        val out = StringBuilder()
+        try {
+            stream.openInputStream().bufferedReader().forEachLine { out.appendLine(it) }
+        } catch (e: java.io.IOException) {
+            if (out.isEmpty()) throw e
+        }
+        return out.toString()
+    }
+
+    private fun onWifi(ctx: Context): Boolean {
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java) ?: return true
+        // Our own hotspot also shows up as a WIFI network (a LOCAL_NETWORK without
+        // INTERNET). A joined Wi-Fi always has INTERNET, validated or not.
+        return cm.allNetworks.any {
+            val caps = cm.getNetworkCapabilities(it) ?: return@any false
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
     }
 
     /** Discover a service's port over mDNS, first hit wins, with a timeout. */

@@ -1,10 +1,12 @@
 package app.warden.server
 
 import android.content.pm.PackageManager
+import android.net.LocalServerSocket
 import android.os.Build
 import android.os.Looper
 import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -21,6 +23,16 @@ object Starter {
 
     @JvmStatic
     fun main(args: Array<String>) {
+        // Single-instance guard. The socket name is device-global, so if it's taken
+        // a broker is already running (e.g. Start tapped before the app re-attached).
+        // Claim it before touching the audit log or publishing a second binder.
+        val execSocket = try {
+            LocalServerSocket(ExecSocketServer.NAME)
+        } catch (e: IOException) {
+            Log.i(TAG, "already running; exiting")
+            println("warden: already running")
+            return
+        }
         Looper.prepareMainLooper()
         val dataDir = File(args.firstOrNull() ?: "/data/local/tmp/warden").apply { mkdirs() }
 
@@ -28,6 +40,7 @@ object Starter {
         val service = WardenService(dataDir, managerCert)
 
         ExecSocketServer(
+            server = execSocket,
             auth = CallerAuth(managerCert),
             grants = service.grantStore(),
             audit = service.audit,

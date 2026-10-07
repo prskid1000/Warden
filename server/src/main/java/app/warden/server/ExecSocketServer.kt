@@ -13,6 +13,7 @@ import java.io.File
  * combined output back. Every command is audited.
  */
 class ExecSocketServer(
+    private val server: LocalServerSocket,
     private val auth: CallerAuth,
     private val grants: GrantStore,
     private val audit: AuditSink,
@@ -25,7 +26,6 @@ class ExecSocketServer(
     }
 
     private fun loop() {
-        val server = LocalServerSocket(NAME)
         Log.i("Warden", "exec socket up: @$NAME")
         while (true) {
             val client = runCatching { server.accept() }.getOrNull() ?: continue

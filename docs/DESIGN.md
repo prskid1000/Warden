@@ -136,6 +136,14 @@ The non-root path is verified end-to-end on real Android 17 hardware:
   peer by socket credentials as `com.android.shell` (uid 2000), denies the
   ungranted caller, and writes a hash-chained audit entry
   (`target":"su","args":"id","verdict":"deny"`).
+- Layer B from an *app*: SELinux denies `untrusted_app -> shell`
+  `unix_stream_socket connectto`, so apps can never reach `@warden_exec`, and
+  W^X stops them executing files from their data dir. `WardenSu` (in `:api`)
+  therefore ships the shim as `libwardensu.so` (native lib dir is executable;
+  needs `useLegacyPackaging`), links it as `su`, and hosts a relay socket
+  `@warden_exec.<uid>` in the app (same uid/domain, peer-uid checked). The shim
+  tries the relay first; the relay forwards via `newProcess` over binder, so the
+  call is grant-checked and audited as `exec`. Verified by `BrokerLiveTest`.
 
 So both start paths now work: **root** via ServiceManager (+ sepolicy rule) and
 **non-root** via the broadcast handshake.

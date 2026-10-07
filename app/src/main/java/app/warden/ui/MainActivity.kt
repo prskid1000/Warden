@@ -1,5 +1,6 @@
 package app.warden.ui
 
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -51,8 +52,10 @@ private fun WardenApp() {
     var working by remember { mutableStateOf(false) }
     var needCode by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
+    // A notification posted before the permission is granted is silently dropped,
+    // so the pairing prompt is (re)posted from the grant callback.
     val notifPerm = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()) { }
+        ActivityResultContracts.RequestPermission()) { granted -> if (granted && needCode) PairNotification.prompt(ctx) }
     fun doStart() {
         if (working) return
         working = true; needCode = false; msg = "Looking for the device…"
@@ -63,9 +66,10 @@ private fun WardenApp() {
                         is AdbStarter.Outcome.Launched -> { working = false; needCode = false; msg = "Started. Connecting…" }
                         AdbStarter.Outcome.PairNeeded -> {
                             working = false; needCode = true; msg = null
-                            if (Build.VERSION.SDK_INT >= 33)
-                                notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                            PairNotification.prompt(ctx)
+                            val perm = android.Manifest.permission.POST_NOTIFICATIONS
+                            if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
+                                notifPerm.launch(perm)
+                            else PairNotification.prompt(ctx)
                         }
                     }
                 },

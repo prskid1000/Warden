@@ -5,4 +5,6 @@ object WardenContract {
     const val MANAGER_PACKAGE = "app.warden"
     const val ACTION_BINDER = "app.warden.action.BINDER"
     const val EXTRA_BINDER = "app.warden.extra.BINDER"
+    // The manager's provider; relays the broker binder to granted apps.
+    const val PROVIDER_URI = "content://app.warden.broker"
 }
