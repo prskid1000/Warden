@@ -62,7 +62,12 @@ class RemoteProcessImpl(
     private fun pipeTo(output: java.io.OutputStream): ParcelFileDescriptor {
         val pipe = ParcelFileDescriptor.createPipe()
         pumps.execute {
+            // Closing the process's stdin when the client closes its end is what gives
+            // the child EOF — and flushes the last buffered bytes. Without it, a child
+            // reading stdin (e.g. `cmd package install -S <size>`) waits forever on the
+            // tail still sitting in the process stream's 8 KB buffer.
             ParcelFileDescriptor.AutoCloseInputStream(pipe[0]).use { runCatching { it.copyTo(output) } }
+            runCatching { output.close() }
         }
         return pipe[1]
     }
