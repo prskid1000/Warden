@@ -70,11 +70,14 @@ fun DashboardScreen(connected: Boolean, start: StartUi) {
                 contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item {
+                // Keyed so the field keeps focus while the list below it filters.
+                item(key = "search") {
                     Box(Modifier.fillMaxWidth().vInset().padding(horizontal = 12.dp, vertical = 10.dp)) {
                         if (query.text.isEmpty()) Text("Search apps", style = T.body.copy(color = N.textMuted))
+                        // Full width: an empty BasicTextField is only as wide as its text, so taps on
+                        // the box missed it and the field never took focus.
                         BasicTextField(query, { query = it }, singleLine = true, textStyle = T.body,
-                            cursorBrush = SolidColor(N.accent))
+                            cursorBrush = SolidColor(N.accent), modifier = Modifier.fillMaxWidth())
                     }
                 }
                 items(apps.filter {
