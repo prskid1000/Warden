@@ -2,7 +2,6 @@ package app.warden.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -191,7 +190,6 @@ private fun NSwitch(checked: Boolean, enabled: Boolean = true, onToggle: (Boolea
 @Composable
 private fun OfflinePanel(start: StartUi) {
     val ctx = LocalContext.current
-    var advanced by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().vCard().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
             start.working -> Row(verticalAlignment = Alignment.CenterVertically,
@@ -222,17 +220,6 @@ private fun OfflinePanel(start: StartUi) {
         }
         start.msg?.takeIf { !start.working && !start.needCode }?.let {
             Text(it, style = T.bodySmall.copy(color = N.accent2))
-        }
-        Text(if (advanced) "Hide advanced" else "Advanced", style = T.label.copy(color = N.textMuted),
-            modifier = Modifier.clickable { advanced = !advanced })
-        AnimatedVisibility(advanced) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("From a PC, or as root:", style = T.bodySmall.copy(color = N.textMuted))
-                Text("adb shell sh /sdcard/Android/data/app.warden/files/start.sh",
-                    style = T.monoSmall, modifier = Modifier.fillMaxWidth().vInset().padding(10.dp))
-                Text("su -c sh /data/local/tmp/warden/start.sh",
-                    style = T.monoSmall, modifier = Modifier.fillMaxWidth().vInset().padding(10.dp))
-            }
         }
     }
 }

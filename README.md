@@ -37,7 +37,7 @@ the service. One-time setup:
    entered from the notification).
 
 After pairing once, **Start** connects instantly. You can also start it from a PC
-with `adb shell sh .../start.sh` (see the app's Advanced section).
+by pushing `starter/start.sh` to the phone and running it with `adb shell sh`.
 
 ## Layout
 
