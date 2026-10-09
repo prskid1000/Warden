@@ -137,8 +137,11 @@ private fun AppCard(app: AppRow, isGranted: Boolean, onChanged: () -> Unit) {
             Text(app.label, style = T.cardTitle, maxLines = 1)
             Text(app.pkg, style = T.monoSmall, maxLines = 1)
         }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
         NSwitch(isGranted) { on ->
-            if (on) WardenClient.setGrant(app.pkg, arrayOf("*")) else WardenClient.revokeGrant(app.pkg)
+            // A refused grant says why (the app isn't installed for this user, so it can't be verified).
+            if (on) WardenClient.setGrant(app.pkg, arrayOf("*"))?.let { android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_LONG).show() }
+            else WardenClient.revokeGrant(app.pkg)
             onChanged()
         }
     }

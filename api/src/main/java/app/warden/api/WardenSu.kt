@@ -60,18 +60,23 @@ object WardenSu {
         val out = sock.outputStream
         // Abstract socket names are device-global: only our own uid may relay.
         if (sock.peerCredentials.uid != Process.myUid()) {
-            out.write("warden-su: denied\n".toByteArray()); return
+            out.write("warden-su: denied\n\u00001\n".toByteArray()); return   // exit code 1, not the shim's default 0
         }
         val cmd = sock.inputStream.bufferedReader().readLine()?.trim().orEmpty()
+        var proc: app.warden.api.IRemoteProcess? = null
         val code = try {
             check(cmd.isNotEmpty()) { "interactive su isn't supported; use su -c CMD" }
             check(Warden.bind(app!!)) { "broker not running" }
-            val p = Warden.newProcess(arrayOf("sh", "-c", "exec 2>&1; $cmd"))
+            val p = Warden.newProcess(arrayOf("sh", "-c", "exec 2>&1; $cmd")).also { proc = it }
             p.outputStream.close()   // no stdin for -c commands
-            ParcelFileDescriptor.AutoCloseInputStream(p.inputStream).use { it.copyTo(out) }
-            p.waitFor()
+            // Copied beside the wait: a background child keeps the output open after sh exits.
+            val input = ParcelFileDescriptor.AutoCloseInputStream(p.inputStream)
+            val copier = Thread { runCatching { input.use { it.copyTo(out) } } }.apply { isDaemon = true; start() }
+            p.waitFor().also { copier.join(2_000); runCatching { input.close() } }
         } catch (e: Exception) {
-            out.write("warden-su: ${e.message}\n".toByteArray())
+            // The process is ended (and its broker slot freed) when the client goes away mid-output.
+            runCatching { proc?.destroy() }
+            runCatching { out.write("warden-su: ${e.message}\n".toByteArray()) }
             1
         }
         // Exit-code trailer the shim parses (NUL + code + newline).

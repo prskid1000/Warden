@@ -77,9 +77,9 @@ object WardenClient {
     fun grants(): JSONArray =
         runCatching { JSONArray(svc?.grantsJson() ?: "[]") }.getOrDefault(JSONArray())
 
-    fun setGrant(pkg: String, scopes: Array<String>, ttlMillis: Long = 0L) {
-        runCatching { svc?.setGrant(pkg, scopes, ttlMillis) }
-    }
+    /** Grant [pkg]; returns why the broker refused (an app it can't verify), or null. */
+    fun setGrant(pkg: String, scopes: Array<String>, ttlMillis: Long = 0L): String? =
+        runCatching { svc?.setGrant(pkg, scopes, ttlMillis); null }.getOrElse { it.message ?: "couldn't grant $pkg" }
 
     fun revokeGrant(pkg: String) { runCatching { svc?.revokeGrant(pkg) } }
 

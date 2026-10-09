@@ -46,6 +46,9 @@ class RemoteProcessImpl(
         } catch (e: Exception) { live.decrementAndGet(); released.set(true); throw e }
     }
 
+    // A client that drops the process (dies, or never calls waitFor/destroy) still gets its slot back when it exits.
+    init { pumps.execute { runCatching { process.waitFor() }; release() } }
+
     override fun getOutputStream(): ParcelFileDescriptor = pipeTo(process.outputStream)
     override fun getInputStream(): ParcelFileDescriptor = pipeFrom(process.inputStream)
     override fun getErrorStream(): ParcelFileDescriptor = pipeFrom(process.errorStream)

@@ -54,7 +54,8 @@ class GrantStore(dir: File) {
                 }
                 val g = Grant(o.getString("pkg"), o.optString("cert").ifEmpty { null },
                     scopes, o.optLong("exp", 0L))
-                grants[g.pkg] = g
+                // Saved before grants needed a certificate: honoured by nobody, so not listed as granted either.
+                if (g.certSha256 != null) grants[g.pkg] = g
             }
         }
     }

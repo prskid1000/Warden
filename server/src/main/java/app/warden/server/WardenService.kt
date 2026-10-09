@@ -85,8 +85,9 @@ class WardenService(
             RemoteProcessImpl(cmd, env, dir)
         }
 
+    // Granted only if authorize would let that app in now: the grant's certificate is the installed app's.
     override fun checkGrant(pkg: String): Int =
-        if (grants.get(pkg) != null) 1 else 0
+        if (grants.get(pkg)?.certSha256?.let { c -> c.equals(certOf(pkg), true) } == true) 1 else 0
 
     // ---- manager-only ------------------------------------------------------
 

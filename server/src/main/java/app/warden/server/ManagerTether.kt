@@ -61,9 +61,14 @@ object ManagerTether {
         quickDeaths = if (SystemClock.elapsedRealtime() - since < 10_000) quickDeaths + 1 else 0
         val wait = if (quickDeaths < 3) 0L else minOf(60_000L, 1000L shl minOf(quickDeaths - 2, 6))
         Log.i(TAG, "tether: manager died; re-taking handle in ${wait}ms")
-        handler.postDelayed({
-            if (!attach()) Log.w(TAG, "tether: manager gone (uninstalled?); not retrying")
-        }, wait)
+        handler.postDelayed({ retryAttach(5_000L) }, wait)
+    }
+
+    /** Keep trying (it may still be installing after an update), backing off to a minute. */
+    private fun retryAttach(next: Long) {
+        if (attach()) return
+        Log.w(TAG, "tether: manager not available; retrying in ${next}ms")
+        handler.postDelayed({ retryAttach(minOf(60_000L, next * 2)) }, next)
     }
 
     // ---- hidden IActivityManager calls ---------------------------------------

@@ -54,7 +54,8 @@ class ExecSocketServer(
         if (!allowed) {
             audit.record(AuditSink.Event(ts = System.currentTimeMillis(), callerUid = uid, callerPkg = id.pkg,
                 target = "su", argsDigest = "", verdict = "deny"))
-            sock.outputStream.write("warden-su: denied\n".toByteArray()); return@use
+            // With an exit code (1): the shim's default is 0, so "su -c x && y" carried on after a refusal.
+            sock.outputStream.write("warden-su: denied\n\u00001\n".toByteArray()); return@use
         }
         sock.soTimeout = 10_000
         val cmd = readLineBounded(sock.inputStream, 65_536)?.trim().orEmpty()
@@ -67,7 +68,7 @@ class ExecSocketServer(
             )
         )
         if (!allowed || cmd.isEmpty()) {
-            sock.outputStream.write("warden-su: denied\n".toByteArray()); return@use
+            sock.outputStream.write("warden-su: denied\n\u00001\n".toByteArray()); return@use
         }
         sock.soTimeout = 0   // the command itself may run long
         val proc = ProcessBuilder("sh", "-c", cmd)
@@ -75,9 +76,11 @@ class ExecSocketServer(
         // No stdin is ever sent: close it so a command that reads it ends instead of waiting forever. If the client
         // goes away mid-output, the child is killed rather than left blocked on a full pipe.
         runCatching { proc.outputStream.close() }
+        // Output is copied on its own thread while this one waits for the exit: a background child (`daemon &`)
+        // keeps the pipe open after sh exits, and reading to EOF here never reached the exit code.
+        val copier = Thread { runCatching { proc.inputStream.copyTo(sock.outputStream) } }.apply { isDaemon = true; start() }
         val code = try {
-            proc.inputStream.copyTo(sock.outputStream)
-            proc.waitFor()
+            proc.waitFor().also { copier.join(2_000); runCatching { proc.inputStream.close() } }
         } finally { if (proc.isAlive) proc.destroyForcibly() }
         // Exit-code trailer the shim can parse (\u0000 + code + \n).
         sock.outputStream.write("\u0000$code\n".toByteArray())
