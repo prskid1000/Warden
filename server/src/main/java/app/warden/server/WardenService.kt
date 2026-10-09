@@ -81,7 +81,11 @@ class WardenService(
         val uid = Binder.getCallingUid()
         val id = auth.identify(uid)
         if (!limiter.allow(uid) || !(auth.isManager(uid) || grants.get(id.pkg) != null))
+        {
+            // Refused attempts are audited like every other call.
+            audit.record(ev(uid, id.pkg, "binder#?", "wrap", "deny", "no-grant or rate-limited"))
             throw SecurityException("Warden: ${id.pkg} has no grant")
+        }
         val desc = describe(target)
         return gated(Grant.service(desc), "binder#$desc", "wrap") { BrokeredBinder(target, desc) }
     }

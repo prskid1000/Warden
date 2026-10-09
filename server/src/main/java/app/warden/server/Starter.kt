@@ -68,6 +68,14 @@ object Starter {
 
         val managerCert = managerCertSha256()
         val service = WardenService(dataDir, managerCert)
+        // As root, everything in the data folder stays the shell user's (state/, grants.json, log/, rotated audit
+        // logs): a later ADB start (as shell) otherwise silently couldn't save grants or write the audit log.
+        if (android.os.Process.myUid() == 0) Thread({
+            while (true) {
+                runCatching { dataDir.walkTopDown().forEach { f -> runCatching { android.system.Os.chown(f.path, 2000, 2000) } } }
+                Thread.sleep(30_000)
+            }
+        }, "warden-owner").apply { isDaemon = true; start() }
 
         if (execSocket != null) ExecSocketServer(
             server = execSocket,

@@ -18,12 +18,10 @@ import app.warden.api.WardenContract
 class BinderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != WardenContract.ACTION_BINDER) return
-        val container = intent.getParcelableExtra(
-            WardenContract.EXTRA_BINDER, BinderContainer::class.java
-        ) ?: run {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(WardenContract.EXTRA_BINDER)
-        }
+        // The typed getter exists only from API 33: below that it threw (the manager crashed on every delivery).
+        val container: Any? = if (android.os.Build.VERSION.SDK_INT >= 33)
+            intent.getParcelableExtra(WardenContract.EXTRA_BINDER, BinderContainer::class.java)
+        else @Suppress("DEPRECATION") intent.getParcelableExtra<BinderContainer>(WardenContract.EXTRA_BINDER)
         val binder = (container as? BinderContainer)?.binder
         if (binder == null || !binder.isBinderAlive) {
             Log.w("Warden", "binder broadcast with no live binder"); return
