@@ -68,6 +68,11 @@ class GrantStore(dir: File) {
                 put("scopes", JSONArray(g.scopes.toList())); put("exp", g.expiresAt)
             })
         }
-        runCatching { file.writeText(arr.toString()) }
+        // Written aside, synced, then renamed over: killed mid-write, every grant was lost.
+        runCatching {
+            val tmp = File(file.path + ".tmp")
+            java.io.FileOutputStream(tmp).use { o -> o.write(arr.toString().toByteArray()); o.fd.sync() }
+            if (!tmp.renameTo(file)) { file.writeText(arr.toString()); tmp.delete() }
+        }.onFailure { android.util.Log.e("Warden", "couldn't save grants", it) }
     }
 }

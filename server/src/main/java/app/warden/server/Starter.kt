@@ -72,7 +72,17 @@ object Starter {
         // logs): a later ADB start (as shell) otherwise silently couldn't save grants or write the audit log.
         if (android.os.Process.myUid() == 0) Thread({
             while (true) {
-                runCatching { dataDir.walkTopDown().forEach { f -> runCatching { android.system.Os.chown(f.path, 2000, 2000) } } }
+                // Never through a symlink: shell could plant one pointing at any root file and have root hand it over.
+                // lchown changes the link itself; links aren't entered.
+                runCatching {
+                    fun walk(f: File) {
+                        val st = runCatching { android.system.Os.lstat(f.path) }.getOrNull() ?: return
+                        if (android.system.OsConstants.S_ISLNK(st.st_mode)) return
+                        runCatching { android.system.Os.lchown(f.path, 2000, 2000) }
+                        if (android.system.OsConstants.S_ISDIR(st.st_mode)) f.listFiles()?.forEach(::walk)
+                    }
+                    walk(dataDir)
+                }
                 Thread.sleep(30_000)
             }
         }, "warden-owner").apply { isDaemon = true; start() }

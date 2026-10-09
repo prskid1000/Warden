@@ -32,7 +32,11 @@ class AuditSink(private val dir: File) {
     )
 
     private val file = File(dir, "audit.jsonl").apply { parentFile?.mkdirs() }
-    private val queue = LinkedBlockingQueue<Event>()
+    // Bounded: a flood can't run the broker out of memory (what doesn't fit is counted, not queued).
+    private val queue = LinkedBlockingQueue<Event>(10_000)
+    private val dropped = java.util.concurrent.atomic.AtomicLong()
+    /** Per uid: when its last refusal was written, and how many since were folded into the next one. */
+    private val denials = java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, Int>>()
     private val listeners = CopyOnWriteArrayList<Listener>()
     private val maxBytes = 8L * 1024 * 1024
     @Volatile private var prevHash = seedHash()
@@ -42,7 +46,22 @@ class AuditSink(private val dir: File) {
     }
 
     /** Non-blocking: enqueue and return. */
-    fun record(e: Event) { queue.offer(e) }
+    // Refusals are written at most once a second per caller (with a count of the rest): a hostile app looping on
+    // refused calls otherwise rotated the whole history away within seconds.
+    fun record(e: Event) {
+        var ev = e
+        if (e.verdict == "deny") {
+            val now = System.currentTimeMillis()
+            var write = false; var folded = 0
+            denials.compute(e.callerUid) { _, last ->
+                if (last == null || now - last.first >= 1_000) { write = true; folded = last?.second ?: 0; now to 0 }
+                else last.first to last.second + 1
+            }
+            if (!write) return
+            if (folded > 0) ev = e.copy(outcome = e.outcome + " (+$folded more refused)")
+        }
+        if (!queue.offer(ev)) dropped.incrementAndGet()
+    }
 
     private fun drainLoop() {
         while (true) {
