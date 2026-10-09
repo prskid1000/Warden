@@ -33,13 +33,17 @@ object SuWire {
         @Volatile private var closedByUs = false
         /** In a write to the client: a slow reader, not an idle pipe — never cut off. */
         @Volatile private var writing = false
+        private val writeLock = Any()
+        @Volatile private var stopped = false
         private val thread = Thread {
             runCatching {
                 val chunk = ByteArray(65_536)
                 while (true) {
                     val n = from.read(chunk); if (n < 0) break
                     progress.set(System.currentTimeMillis())
-                    writing = true; to.write(chunk, 0, n); writing = false
+                    // Under the lock, and never after finish() stopped us: the trailer must not overlap a late write.
+                    val stop = synchronized(writeLock) { if (stopped) true else { writing = true; to.write(chunk, 0, n); writing = false; false } }
+                    if (stop) break
                     progress.set(System.currentTimeMillis())
                 }
                 to.flush()
@@ -54,6 +58,10 @@ object SuWire {
          * closed, so the trailer can follow.
          */
         fun finish() {
+            try { waitOut() } finally { synchronized(writeLock) { stopped = true } }   // no write after this returns
+        }
+
+        private fun waitOut() {
             // 2 s from the exit, extended only while a write to a slow reader is in progress. Counting from the last
             // byte instead never ended for a chatty background child (`logcat &`): su never returned.
             val exitAt = System.currentTimeMillis()

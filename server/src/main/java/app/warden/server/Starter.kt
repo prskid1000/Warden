@@ -20,26 +20,39 @@ import java.security.MessageDigest
  */
 object Starter {
     private const val TAG = "Warden"
+    /** The single-instance lock, kept referenced so it's never released while the server runs. */
+    @Volatile private var heldLock: java.nio.channels.FileLock? = null
 
     @JvmStatic
     fun main(args: Array<String>) {
-        // Single-instance guard. The socket name is device-global, so if it's taken
-        // a broker is already running (e.g. Start tapped before the app re-attached).
-        // Claim it before touching the audit log or publishing a second binder.
-        val execSocket = try {
-            LocalServerSocket(ExecSocketServer.NAME)
-        } catch (e: IOException) {
+        val dataDir = File(args.firstOrNull() ?: "/data/local/tmp/warden").apply { mkdirs() }
+        // Single-instance guard: a lock on a file only shell/root can reach. (The device-global socket name was the
+        // guard before, and any app could bind it to stop Warden from ever starting.) Held for the process's life.
+        val lock = runCatching { java.io.RandomAccessFile(File(dataDir, "server.lock"), "rw").channel.tryLock() }.getOrNull()
+        if (lock == null) {
             Log.i(TAG, "already running; exiting")
             println("warden: already running")
             return
         }
+        heldLock = lock
+        // The su socket. If its name is taken by someone else (any app can bind an abstract name), Warden still runs —
+        // only su is unavailable — and says who holds it.
+        val execSocket = try { LocalServerSocket(ExecSocketServer.NAME) } catch (e: IOException) {
+            val holder = runCatching {
+                android.net.LocalSocket().use { s ->
+                    s.connect(android.net.LocalSocketAddress(ExecSocketServer.NAME)); s.peerCredentials.uid
+                }
+            }.getOrNull()
+            Log.e(TAG, "su socket @${ExecSocketServer.NAME} is held by uid $holder — su is unavailable until that app is removed")
+            println("warden: su unavailable — its socket is held by uid $holder")
+            null
+        }
         Looper.prepareMainLooper()
-        val dataDir = File(args.firstOrNull() ?: "/data/local/tmp/warden").apply { mkdirs() }
 
         val managerCert = managerCertSha256()
         val service = WardenService(dataDir, managerCert)
 
-        ExecSocketServer(
+        if (execSocket != null) ExecSocketServer(
             server = execSocket,
             auth = CallerAuth(managerCert),
             grants = service.grantStore(),

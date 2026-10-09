@@ -86,8 +86,13 @@ class WardenService(
         }
 
     // Granted only if authorize would let that app in now: the grant's certificate is the installed app's.
-    override fun checkGrant(pkg: String): Int =
-        if (grants.get(pkg)?.certSha256?.let { c -> c.equals(certOf(pkg), true) } == true) 1 else 0
+    // Only about the caller itself (or for the manager): any binder holder could otherwise list which apps have
+    // shell-level access.
+    override fun checkGrant(pkg: String): Int {
+        val uid = Binder.getCallingUid()
+        if (!auth.isManager(uid) && auth.identify(uid).pkg != pkg) return 0
+        return if (grants.get(pkg)?.certSha256?.let { c -> c.equals(certOf(pkg), true) } == true) 1 else 0
+    }
 
     // ---- manager-only ------------------------------------------------------
 

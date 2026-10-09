@@ -53,9 +53,15 @@ object Warden {
     private fun genuine(context: Context): Boolean = runCatching {
         val pm = context.packageManager
         if (pm.resolveContentProvider(WardenContract.AUTHORITY, 0)?.packageName != "app.warden") return false
-        val signers = pm.getPackageInfo("app.warden", android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
-            .signingInfo?.apkContentsSigners ?: return false
-        signers.any { s -> java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } == CERT_SHA256 }
+        // API 28+: the platform checks, following the key's rotation history. Before that (minSdk 26): the signatures.
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            val cert = CERT_SHA256.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            pm.hasSigningCertificate("app.warden", cert, android.content.pm.PackageManager.CERT_INPUT_SHA256)
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo("app.warden", android.content.pm.PackageManager.GET_SIGNATURES).signatures.orEmpty().any { s ->
+                java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } == CERT_SHA256 }
+        }
     }.getOrDefault(false)
 
     private fun require(): IWarden =

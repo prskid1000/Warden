@@ -44,8 +44,9 @@ object WardenSu {
         val su = File(bin, "su").apply { delete() }
         Os.symlink(shim.absolutePath, su.absolutePath)
         if (app == null) {
-            app = context.applicationContext
+            // Marked installed only once the socket is ours: if another app holds the name, the next install() retries.
             val server = LocalServerSocket(socketName())
+            app = context.applicationContext
             Thread({
                 while (true) {
                     val client = runCatching { server.accept() }.getOrNull() ?: continue

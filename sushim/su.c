@@ -13,6 +13,7 @@
  * In a cooperating app, WardenSu (in :api) ships this binary as libwardensu.so,
  * links it as `su` in a dir the app prepends to PATH, and hosts the relay socket.
  */
+#define _GNU_SOURCE   /* struct ucred */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,11 +40,28 @@ static int connect_abstract(const char *name) {
  * connectto), so inside an app we go through the relay the app hosts with
  * WardenSu (same uid, same domain), which forwards over the broker binder.
  * Callers that may reach the broker directly fall back to its socket. */
+/* Abstract names can be bound by any app: only talk to the expected owner. The relay must be our own uid (our app's
+ * WardenSu); the broker must be shell (2000) or root (0). Otherwise the command would go to whoever squatted it. */
+static int peer_uid(int fd) {
+    struct ucred cred; socklen_t len = sizeof cred;
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) == 0 ? (int)cred.uid : -1;
+}
+
 static int connect_broker(void) {
     char relay[64];
     snprintf(relay, sizeof relay, "%s.%u", WARDEN_SOCK, (unsigned)getuid());
     int fd = connect_abstract(relay);
-    return fd >= 0 ? fd : connect_abstract(WARDEN_SOCK);
+    if (fd >= 0) {
+        if (peer_uid(fd) == (int)getuid()) return fd;
+        close(fd);
+    }
+    fd = connect_abstract(WARDEN_SOCK);
+    if (fd >= 0) {
+        int uid = peer_uid(fd);
+        if (uid == 0 || uid == 2000) return fd;
+        close(fd);
+    }
+    return -1;
 }
 
 int main(int argc, char **argv) {
@@ -55,7 +73,9 @@ int main(int argc, char **argv) {
             break;
         }
     }
-    if (!cmd) cmd = "sh";
+    /* No -c: interactive su (commands on stdin) isn't supported — send nothing, so the broker says so and exits 1
+     * (running a bare "sh" with stdin closed printed nothing and exited 0, as if the commands had worked). */
+    if (!cmd) cmd = "";
 
     int fd = connect_broker();
     if (fd < 0) {
