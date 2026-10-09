@@ -63,27 +63,38 @@ int main(int argc, char **argv) {
                         "and this app granted?)\n");
         return 1;
     }
-    /* Wire protocol: length-prefixed command, then the broker relays stdio and
-     * returns the exit code as a final byte. Kept minimal here; the broker side
-     * lives in the server's exec socket handler. */
-    dprintf(fd, "%s\n", cmd);
-    /* Stream output; the broker ends with a NUL + exit code + newline trailer. */
+    /* Wire protocol: the command, ended by a NUL (so a multi-line script arrives whole), then the broker
+     * streams the output and ends it with a trailer: NUL + exit code + newline. The trailer is taken only from
+     * the very end of the stream, so NULs inside the output (a PNG from screencap, find -print0) pass through. */
+    (void)!write(fd, cmd, strlen(cmd));
+    (void)!write(fd, "", 1);
     char buf[4096];
+    char pend[64]; size_t plen = 0;   /* the last bytes seen: they may be the trailer */
     ssize_t n;
-    int exit_code = 0, in_trailer = 0;
-    char code_buf[16]; size_t code_len = 0;
     while ((n = read(fd, buf, sizeof buf)) > 0) {
-        for (ssize_t i = 0; i < n; i++) {
-            if (!in_trailer && buf[i] == '\0') { in_trailer = 1; continue; }
-            if (in_trailer) {
-                if (buf[i] != '\n' && code_len < sizeof code_buf - 1)
-                    code_buf[code_len++] = buf[i];
-            } else {
-                (void)!write(STDOUT_FILENO, &buf[i], 1);
-            }
-        }
+        size_t total = plen + (size_t)n;
+        if (total <= sizeof pend) { memcpy(pend + plen, buf, (size_t)n); plen = total; continue; }
+        /* Everything but the last sizeof(pend) bytes is output for sure: write it in one go. */
+        size_t flush = total - sizeof pend;
+        size_t from_pend = flush < plen ? flush : plen;
+        (void)!write(STDOUT_FILENO, pend, from_pend);
+        memmove(pend, pend + from_pend, plen - from_pend); plen -= from_pend;
+        size_t from_buf = flush - from_pend;
+        (void)!write(STDOUT_FILENO, buf, from_buf);
+        memcpy(pend + plen, buf + from_buf, (size_t)n - from_buf); plen += (size_t)n - from_buf;
     }
     close(fd);
-    if (code_len) { code_buf[code_len] = '\0'; exit_code = atoi(code_buf); }
+    /* Find the trailer: a NUL, digits (maybe a '-'), a newline, at the very end. */
+    int exit_code = 1;   /* no trailer: the broker went away mid-command */
+    size_t out = plen;
+    if (plen >= 3 && pend[plen - 1] == '\n') {
+        size_t j = plen - 1;
+        while (j > 0 && ((pend[j - 1] >= '0' && pend[j - 1] <= '9') || pend[j - 1] == '-')) j--;
+        if (j > 0 && j < plen - 1 && pend[j - 1] == '\0') {
+            char code[24]; size_t len = plen - 1 - j;
+            if (len < sizeof code) { memcpy(code, pend + j, len); code[len] = '\0'; exit_code = atoi(code); out = j - 1; }
+        }
+    }
+    (void)!write(STDOUT_FILENO, pend, out);
     return exit_code;
 }

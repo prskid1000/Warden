@@ -30,7 +30,8 @@ object WardenClient {
     val connected: Boolean get() = svc?.asBinder()?.isBinderAlive == true
 
     fun attach(binder: IBinder) {
-        if (svc?.asBinder() === binder && binder.isBinderAlive) return
+        // A working broker is never replaced: only its death (onDeath) makes room for a new one.
+        if (svc?.asBinder()?.isBinderAlive == true) return
         val s = IWarden.Stub.asInterface(binder)
         val linked = runCatching { binder.linkToDeath({ onDeath(binder) }, 0) }.isSuccess
         if (!linked) return   // already dead

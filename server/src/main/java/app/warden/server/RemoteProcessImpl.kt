@@ -65,8 +65,9 @@ class RemoteProcessImpl(
         val pipe = ParcelFileDescriptor.createPipe()
         pumps.execute {
             ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { out ->
-                // The client went away (its end closed): keep draining so the child never blocks on a full pipe.
-                runCatching { input.copyTo(out) }.onFailure { runCatching { input.copyTo(java.io.OutputStream.nullOutputStream()) } }
+                // The client went away (its end closed): end the command and free its slot. Draining it to nowhere kept
+                // never-ending commands (logcat, tail -f) running forever, holding a slot each.
+                runCatching { input.copyTo(out) }.onFailure { runCatching { process.destroyForcibly() }; release() }
             }
         }
         return pipe[0]

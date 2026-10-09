@@ -53,9 +53,11 @@
 
         <!-- Receives the broker binder broadcast by the shell-started server
              (ADB path). Exported so the server's shell-uid broadcast reaches it;
-             the payload binder is validated before it is trusted. -->
+             the payload binder is validated before it is trusted. Only senders holding INTERACT_ACROSS_USERS_FULL
+             (shell, root — never an ordinary app) may deliver it: another app could otherwise hand us a fake broker. -->
         <receiver
             android:name=".data.BinderReceiver"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:exported="true">
             <intent-filter>
                 <action android:name="app.warden.action.BINDER" />

@@ -62,28 +62,24 @@ object WardenSu {
         if (sock.peerCredentials.uid != Process.myUid()) {
             out.write("warden-su: denied\n\u00001\n".toByteArray()); return   // exit code 1, not the shim's default 0
         }
-        val cmd = sock.inputStream.bufferedReader().readLine()?.trim().orEmpty()
+        // The whole command, up to its NUL (a multi-line script arrives whole).
+        val cmd = SuWire.readCommand(sock.inputStream)?.trim().orEmpty()
         var proc: app.warden.api.IRemoteProcess? = null
         val code = try {
             check(cmd.isNotEmpty()) { "interactive su isn't supported; use su -c CMD" }
             check(Warden.bind(app!!)) { "broker not running" }
             val p = Warden.newProcess(arrayOf("sh", "-c", "exec 2>&1; $cmd")).also { proc = it }
             p.outputStream.close()   // no stdin for -c commands
-            // Copied beside the wait: a background child keeps the output open after sh exits.
-            val input = ParcelFileDescriptor.AutoCloseInputStream(p.inputStream)
-            // The caller left (a write failed): end the command, which also ends the wait and frees its broker slot.
-            val copier = Thread { runCatching { input.use { it.copyTo(out) } }.onFailure { runCatching { p.destroy() } } }
-                .apply { isDaemon = true; start() }
-            // The trailer goes after the last output byte: wait for the copier once the input is closed.
-            p.waitFor().also { copier.join(2_000); runCatching { input.close() }; copier.join(2_000) }
+            // Copied beside the wait (a background child keeps the output open after sh exits). If the caller
+            // leaves, the command is ended, which frees its broker slot. The pump finishes before the trailer.
+            val pump = SuWire.Pump(ParcelFileDescriptor.AutoCloseInputStream(p.inputStream), out) { runCatching { p.destroy() } }
+            p.waitFor().also { pump.finish() }
         } catch (e: Exception) {
-            // The process is ended (and its broker slot freed) when the client goes away mid-output.
             runCatching { proc?.destroy() }
             runCatching { out.write("warden-su: ${e.message}\n".toByteArray()) }
             1
         }
-        // Exit-code trailer the shim parses (NUL + code + newline).
-        out.write("\u0000$code\n".toByteArray())
+        out.write(SuWire.trailer(code))
         out.flush()
     }
 }

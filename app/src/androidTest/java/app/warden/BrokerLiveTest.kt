@@ -127,4 +127,18 @@ class BrokerLiveTest {
         assertEquals(3, code)
         assertTrue(out, out.contains("oops"))
     }
+
+    @Test fun suShimRunsAWholeMultiLineScript() {
+        // Each line used to be dropped after the first.
+        val (code, out) = su("echo one\necho two\nexit 4")
+        assertEquals(4, code)
+        assertEquals("one\ntwo", out.trim())
+    }
+
+    @Test fun suShimPassesNulBytesThrough() {
+        // A NUL in the output was taken as the exit-code trailer (screencap's PNG came out 8 bytes).
+        val (code, out) = su("printf 'a\\000b\\000c'; exit 0")
+        assertEquals(0, code)
+        assertEquals("a\u0000b\u0000c", out)
+    }
 }
