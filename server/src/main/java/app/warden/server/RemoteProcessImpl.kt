@@ -27,26 +27,33 @@ class RemoteProcessImpl(
         }
     }
 
+    // This process's slot in [live], given back exactly once: waitFor and destroy both end it (a client that times
+    // out calls both), and a failed start must return it too.
+    private val released = java.util.concurrent.atomic.AtomicBoolean(false)
+    private fun release() { if (released.compareAndSet(false, true)) live.decrementAndGet() }
+
     private val process: Process = run {
         check(live.incrementAndGet() <= MAX_CONCURRENT) {
             live.decrementAndGet(); "Warden: too many concurrent processes"
         }
-        ProcessBuilder(*cmd)
-            .directory(File(dir))
-            .also { pb -> env.forEach { e -> pb.environment()[e.substringBefore('=')] = e.substringAfter('=', "") } }
-            .start()
+        try {
+            ProcessBuilder(*cmd)
+                .directory(File(dir))
+                .also { pb -> env.forEach { e -> pb.environment()[e.substringBefore('=')] = e.substringAfter('=', "") } }
+                .start()
+        } catch (e: Exception) { live.decrementAndGet(); released.set(true); throw e }
     }
 
     override fun getOutputStream(): ParcelFileDescriptor = pipeTo(process.outputStream)
     override fun getInputStream(): ParcelFileDescriptor = pipeFrom(process.inputStream)
     override fun getErrorStream(): ParcelFileDescriptor = pipeFrom(process.errorStream)
 
-    override fun waitFor(): Int = process.waitFor().also { live.decrementAndGet() }
+    override fun waitFor(): Int = process.waitFor().also { release() }
     override fun exitValue(): Int = process.exitValue()
     override fun alive(): Boolean = process.isAlive
     override fun destroy() {
         if (process.isAlive) process.destroyForcibly()
-        live.decrementAndGet()
+        release()
     }
 
     private fun pipeFrom(input: java.io.InputStream): ParcelFileDescriptor {
