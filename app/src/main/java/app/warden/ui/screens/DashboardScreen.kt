@@ -245,5 +245,6 @@ private fun Step(n: String, text: String) {
 
 private fun grantedPkgs(): Set<String> {
     val arr = WardenClient.grants()
-    return buildSet { for (i in 0 until arr.length()) add(arr.getJSONObject(i).getString("pkg")) }
+    // Only grants that work now: an expired one, or one for an app since reinstalled with another key, shows off.
+    return buildSet { for (i in 0 until arr.length()) arr.getJSONObject(i).takeIf { it.optBoolean("active", true) }?.let { add(it.getString("pkg")) } }
 }

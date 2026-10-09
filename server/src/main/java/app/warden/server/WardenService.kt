@@ -109,6 +109,8 @@ class WardenService(
             arr.put(JSONObject().apply {
                 put("pkg", g.pkg); put("scopes", JSONArray(g.scopes.toList()))
                 put("exp", g.expiresAt); put("cert", g.certSha256 ?: "")
+                // Whether it works now (live, and the installed app is the one granted): the switch shows this.
+                put("active", g.isLive() && g.certSha256 != null && g.certSha256.equals(certOf(g.pkg), true))
             })
         }
         return arr.toString()

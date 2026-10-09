@@ -71,8 +71,11 @@ object WardenSu {
             p.outputStream.close()   // no stdin for -c commands
             // Copied beside the wait: a background child keeps the output open after sh exits.
             val input = ParcelFileDescriptor.AutoCloseInputStream(p.inputStream)
-            val copier = Thread { runCatching { input.use { it.copyTo(out) } } }.apply { isDaemon = true; start() }
-            p.waitFor().also { copier.join(2_000); runCatching { input.close() } }
+            // The caller left (a write failed): end the command, which also ends the wait and frees its broker slot.
+            val copier = Thread { runCatching { input.use { it.copyTo(out) } }.onFailure { runCatching { p.destroy() } } }
+                .apply { isDaemon = true; start() }
+            // The trailer goes after the last output byte: wait for the copier once the input is closed.
+            p.waitFor().also { copier.join(2_000); runCatching { input.close() }; copier.join(2_000) }
         } catch (e: Exception) {
             // The process is ended (and its broker slot freed) when the client goes away mid-output.
             runCatching { proc?.destroy() }

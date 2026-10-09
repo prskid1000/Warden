@@ -78,9 +78,12 @@ class ExecSocketServer(
         runCatching { proc.outputStream.close() }
         // Output is copied on its own thread while this one waits for the exit: a background child (`daemon &`)
         // keeps the pipe open after sh exits, and reading to EOF here never reached the exit code.
-        val copier = Thread { runCatching { proc.inputStream.copyTo(sock.outputStream) } }.apply { isDaemon = true; start() }
+        // The client left (a write failed): end the command, which also ends the wait below.
+        val copier = Thread { runCatching { proc.inputStream.copyTo(sock.outputStream) }.onFailure { proc.destroyForcibly() } }
+            .apply { isDaemon = true; start() }
         val code = try {
-            proc.waitFor().also { copier.join(2_000); runCatching { proc.inputStream.close() } }
+            // After closing the input, wait for the copier to stop: the trailer must come after the last output byte.
+            proc.waitFor().also { copier.join(2_000); runCatching { proc.inputStream.close() }; copier.join(2_000) }
         } finally { if (proc.isAlive) proc.destroyForcibly() }
         // Exit-code trailer the shim can parse (\u0000 + code + \n).
         sock.outputStream.write("\u0000$code\n".toByteArray())

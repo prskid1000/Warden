@@ -51,6 +51,8 @@ class AuditSink(private val dir: File) {
         }
     }
 
+    // Same lock as clear(): an event written during a clear chained to the old hash and broke the new log's chain.
+    @Synchronized
     private fun writeOne(e: Event) {
         val payload = JSONObject().apply {
             put("ts", e.ts); put("uid", e.callerUid)
