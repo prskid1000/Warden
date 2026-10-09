@@ -36,6 +36,9 @@ object Warden {
     @JvmStatic
     fun bind(context: Context): Boolean {
         if (isReady()) return true
+        // Only the real Warden's provider: an app that took the authority (or the package name, with Warden not
+        // installed) would otherwise get every command and could answer anything.
+        if (!genuine(context)) return false
         val binder = runCatching {
             context.contentResolver.call(Uri.parse(WardenContract.PROVIDER_URI), "getBinder", null, null)
                 ?.getBinder("binder")
@@ -43,6 +46,17 @@ object Warden {
         onBinderReceived(binder)
         return isReady()
     }
+
+    /** SHA-256 of Warden's signing certificate (debug and release builds share it). */
+    private const val CERT_SHA256 = "b5b3cd575546a8bfa3829a00aaaeb559e37d20362c815978fbfba1b532f4985a"
+
+    private fun genuine(context: Context): Boolean = runCatching {
+        val pm = context.packageManager
+        if (pm.resolveContentProvider(WardenContract.AUTHORITY, 0)?.packageName != "app.warden") return false
+        val signers = pm.getPackageInfo("app.warden", android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+            .signingInfo?.apkContentsSigners ?: return false
+        signers.any { s -> java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } == CERT_SHA256 }
+    }.getOrDefault(false)
 
     private fun require(): IWarden =
         service ?: throw IllegalStateException("Warden not bound; is the server running and granted?")

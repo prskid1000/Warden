@@ -69,19 +69,19 @@ int main(int argc, char **argv) {
     (void)!write(fd, cmd, strlen(cmd));
     (void)!write(fd, "", 1);
     char buf[4096];
-    char pend[64]; size_t plen = 0;   /* the last bytes seen: they may be the trailer */
+    /* Only a NUL near the end (a trailer is NUL + at most a few digits + newline) is held back; all other output is
+     * written at once, so a running command's latest line shows (holding a fixed tail delayed it indefinitely). */
+    enum { TAIL = 16 };
+    char pend[TAIL]; size_t plen = 0;
+    char work[TAIL + sizeof buf];
     ssize_t n;
     while ((n = read(fd, buf, sizeof buf)) > 0) {
-        size_t total = plen + (size_t)n;
-        if (total <= sizeof pend) { memcpy(pend + plen, buf, (size_t)n); plen = total; continue; }
-        /* Everything but the last sizeof(pend) bytes is output for sure: write it in one go. */
-        size_t flush = total - sizeof pend;
-        size_t from_pend = flush < plen ? flush : plen;
-        (void)!write(STDOUT_FILENO, pend, from_pend);
-        memmove(pend, pend + from_pend, plen - from_pend); plen -= from_pend;
-        size_t from_buf = flush - from_pend;
-        (void)!write(STDOUT_FILENO, buf, from_buf);
-        memcpy(pend + plen, buf + from_buf, (size_t)n - from_buf); plen += (size_t)n - from_buf;
+        memcpy(work, pend, plen); memcpy(work + plen, buf, (size_t)n);
+        size_t len = plen + (size_t)n, keep = len;
+        for (size_t j = len; j > 0 && len - (j - 1) <= TAIL; j--)
+            if (work[j - 1] == '\0') { keep = j - 1; break; }
+        (void)!write(STDOUT_FILENO, work, keep);
+        plen = len - keep; memcpy(pend, work + keep, plen);
     }
     close(fd);
     /* Find the trailer: a NUL, digits (maybe a '-'), a newline, at the very end. */

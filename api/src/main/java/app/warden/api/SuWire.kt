@@ -44,6 +44,8 @@ object SuWire {
                 }
                 to.flush()
             }.onFailure { if (it !is java.io.IOException || !closedByUs) onClientGone() }
+            // The input is closed at its end too (each relayed su left a pipe open until GC).
+            runCatching { from.close() }
         }.apply { isDaemon = true; start() }
 
         /**
@@ -52,9 +54,12 @@ object SuWire {
          * closed, so the trailer can follow.
          */
         fun finish() {
+            // 2 s from the exit, extended only while a write to a slow reader is in progress. Counting from the last
+            // byte instead never ended for a chatty background child (`logcat &`): su never returned.
+            val exitAt = System.currentTimeMillis()
             while (thread.isAlive) {
                 thread.join(500)
-                if (thread.isAlive && !writing && System.currentTimeMillis() - progress.get() > 2_000) {
+                if (thread.isAlive && !writing && System.currentTimeMillis() - exitAt > 2_000) {
                     closedByUs = true; runCatching { from.close() }; thread.join(2_000); break
                 }
             }
