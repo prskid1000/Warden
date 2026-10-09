@@ -12,7 +12,8 @@ import java.lang.reflect.Modifier
  */
 object TransactionNames {
     private const val PREFIX = "TRANSACTION_"
-    private val cache = HashMap<String, Map<Int, String>>()
+    // Read and filled from many binder threads at once.
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Map<Int, String>>()
 
     fun resolve(descriptor: String, code: Int): String {
         val table = cache.getOrPut(descriptor) { build(descriptor) }

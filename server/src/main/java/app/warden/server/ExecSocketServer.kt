@@ -33,11 +33,31 @@ class ExecSocketServer(
         }
     }
 
+    /** One line of at most [max] bytes (null if longer or the stream ends first). */
+    private fun readLineBounded(input: java.io.InputStream, max: Int): String? {
+        val buf = java.io.ByteArrayOutputStream()
+        while (buf.size() <= max) {
+            val b = input.read()
+            if (b < 0) return if (buf.size() > 0) buf.toString(Charsets.UTF_8.name()) else null
+            if (b == '\n'.code) return buf.toString(Charsets.UTF_8.name())
+            buf.write(b)
+        }
+        return null
+    }
+
     private fun handle(sock: LocalSocket) = sock.use {
         val uid = sock.peerCredentials.uid
         val id = auth.identify(uid)
-        val cmd = sock.inputStream.bufferedReader().readLine()?.trim().orEmpty()
+        // The caller is checked before anything is read from it, and the read is bounded (64 KB, 10 s): an app
+        // without the grant could otherwise send an endless line or hold threads with idle connections.
         val allowed = isManagerUid(uid) || grants.authorize(id, Grant.SCOPE_EXEC)
+        if (!allowed) {
+            audit.record(AuditSink.Event(ts = System.currentTimeMillis(), callerUid = uid, callerPkg = id.pkg,
+                target = "su", argsDigest = "", verdict = "deny"))
+            sock.outputStream.write("warden-su: denied\n".toByteArray()); return@use
+        }
+        sock.soTimeout = 10_000
+        val cmd = readLineBounded(sock.inputStream, 65_536)?.trim().orEmpty()
         val t0 = System.nanoTime()
         audit.record(
             AuditSink.Event(
@@ -49,10 +69,16 @@ class ExecSocketServer(
         if (!allowed || cmd.isEmpty()) {
             sock.outputStream.write("warden-su: denied\n".toByteArray()); return@use
         }
+        sock.soTimeout = 0   // the command itself may run long
         val proc = ProcessBuilder("sh", "-c", cmd)
             .redirectErrorStream(true).directory(File("/")).start()
-        proc.inputStream.copyTo(sock.outputStream)
-        val code = proc.waitFor()
+        // No stdin is ever sent: close it so a command that reads it ends instead of waiting forever. If the client
+        // goes away mid-output, the child is killed rather than left blocked on a full pipe.
+        runCatching { proc.outputStream.close() }
+        val code = try {
+            proc.inputStream.copyTo(sock.outputStream)
+            proc.waitFor()
+        } finally { if (proc.isAlive) proc.destroyForcibly() }
         // Exit-code trailer the shim can parse (\u0000 + code + \n).
         sock.outputStream.write("\u0000$code\n".toByteArray())
         sock.outputStream.flush()

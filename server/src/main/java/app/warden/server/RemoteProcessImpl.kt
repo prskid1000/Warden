@@ -20,7 +20,9 @@ class RemoteProcessImpl(
 ) : app.warden.api.IRemoteProcess.Stub() {
 
     companion object {
-        private const val MAX_CONCURRENT = 32
+        // Each running process keeps a binder thread in waitFor: stay under the ~15-thread pool, or destroy() and
+        // every other call would block behind them.
+        private const val MAX_CONCURRENT = 12
         private val live = AtomicInteger(0)
         private val pumps = Executors.newCachedThreadPool { r ->
             Thread(r, "warden-pipe").apply { isDaemon = true }
@@ -60,7 +62,8 @@ class RemoteProcessImpl(
         val pipe = ParcelFileDescriptor.createPipe()
         pumps.execute {
             ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { out ->
-                runCatching { input.copyTo(out) }
+                // The client went away (its end closed): keep draining so the child never blocks on a full pipe.
+                runCatching { input.copyTo(out) }.onFailure { runCatching { input.copyTo(java.io.OutputStream.nullOutputStream()) } }
             }
         }
         return pipe[0]

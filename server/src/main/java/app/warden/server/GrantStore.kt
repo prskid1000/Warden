@@ -29,7 +29,8 @@ class GrantStore(dir: File) {
     fun authorize(id: CallerAuth.Identity, scope: String): Boolean {
         val g = grants[id.pkg ?: return false] ?: return false
         if (!g.isLive()) return false
-        if (g.certSha256 != null && !g.certSha256.equals(id.certSha256, true)) return false
+        // A grant with no certificate (saved before grants required one) authorizes nobody.
+        if (g.certSha256 == null || !g.certSha256.equals(id.certSha256, true)) return false
         return g.covers(scope)
     }
 

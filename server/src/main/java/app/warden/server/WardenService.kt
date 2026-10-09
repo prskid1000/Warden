@@ -93,7 +93,10 @@ class WardenService(
     override fun setGrant(pkg: String, scopes: Array<String>, ttlMillis: Long) {
         managerOnly()
         val exp = if (ttlMillis <= 0) 0L else System.currentTimeMillis() + ttlMillis
-        grants.put(Grant(pkg, certOf(pkg), scopes.toSet(), exp))
+        // A grant is bound to the app's signing certificate. Without one (not installed yet, another profile) any
+        // app later installed under that name would inherit it: refuse instead.
+        val cert = certOf(pkg) ?: throw IllegalArgumentException("$pkg isn't installed for this user — install it, then grant")
+        grants.put(Grant(pkg, cert, scopes.toSet(), exp))
     }
 
     override fun revokeGrant(pkg: String) { managerOnly(); grants.revoke(pkg) }
