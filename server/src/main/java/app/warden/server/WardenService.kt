@@ -76,6 +76,12 @@ class WardenService(
     // ---- broker surface ----------------------------------------------------
 
     override fun transactAs(target: IBinder): IBinder {
+        // Asking the binder its name calls into the caller's process: only for the manager or a granted app, within
+        // its rate limit. Any app could otherwise pass a binder that never answers and tie up every binder thread.
+        val uid = Binder.getCallingUid()
+        val id = auth.identify(uid)
+        if (!limiter.allow(uid) || !(auth.isManager(uid) || grants.get(id.pkg) != null))
+            throw SecurityException("Warden: ${id.pkg} has no grant")
         val desc = describe(target)
         return gated(Grant.service(desc), "binder#$desc", "wrap") { BrokeredBinder(target, desc) }
     }

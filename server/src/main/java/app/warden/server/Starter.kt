@@ -28,7 +28,18 @@ object Starter {
         val dataDir = File(args.firstOrNull() ?: "/data/local/tmp/warden").apply { mkdirs() }
         // Single-instance guard: a lock on a file only shell/root can reach. (The device-global socket name was the
         // guard before, and any app could bind it to stop Warden from ever starting.) Held for the process's life.
-        val lock = runCatching { java.io.RandomAccessFile(File(dataDir, "server.lock"), "rw").channel.tryLock() }.getOrNull()
+        val lockFile = File(dataDir, "server.lock")
+        // A file a root start left behind is made the shell user's, so a later ADB start can open it.
+        if (android.os.Process.myUid() == 0) runCatching {
+            lockFile.createNewFile(); android.system.Os.chown(dataDir.path, 2000, 2000); android.system.Os.chown(lockFile.path, 2000, 2000)
+        }
+        // Can't open it (a root-owned file from an earlier root start) is not "already running": say what's wrong.
+        val channel = runCatching { java.io.RandomAccessFile(lockFile, "rw").channel }.getOrElse {
+            Log.e(TAG, "can't open ${lockFile.path}: ${it.message}")
+            println("warden: can't open ${lockFile.path} (${it.message}) — delete it, or start once as root to fix its owner")
+            return
+        }
+        val lock = runCatching { channel.tryLock() }.getOrNull()
         if (lock == null) {
             Log.i(TAG, "already running; exiting")
             println("warden: already running")
@@ -43,6 +54,12 @@ object Starter {
                     s.connect(android.net.LocalSocketAddress(ExecSocketServer.NAME)); s.peerCredentials.uid
                 }
             }.getOrNull()
+            // Held by shell or root: another Warden (an older one without the lock file). Don't run two brokers.
+            if (holder == 0 || holder == 2000) {
+                Log.i(TAG, "another Warden holds the su socket; exiting")
+                println("warden: already running")
+                return
+            }
             Log.e(TAG, "su socket @${ExecSocketServer.NAME} is held by uid $holder — su is unavailable until that app is removed")
             println("warden: su unavailable — its socket is held by uid $holder")
             null

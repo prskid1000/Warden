@@ -49,11 +49,13 @@ class ExecSocketServer(
         // The whole command, up to its NUL: a multi-line script arrives whole (a line read ran only its first line).
         val cmd = app.warden.api.SuWire.readCommand(sock.inputStream)?.trim().orEmpty()
         val t0 = System.nanoTime()
+        // An empty (interactive su) or too-long command is refused: logged as that, not as allowed.
         audit.record(
             AuditSink.Event(
                 ts = System.currentTimeMillis(), callerUid = uid, callerPkg = id.pkg,
                 target = "su", argsDigest = cmd.take(120),
-                verdict = if (allowed) "allow" else "deny",
+                verdict = if (cmd.isEmpty()) "deny" else "allow",
+                outcome = if (cmd.isEmpty()) "empty or too-long command" else "",
             )
         )
         if (!allowed || cmd.isEmpty()) {

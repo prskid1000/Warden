@@ -117,8 +117,10 @@ object AdbStarter {
         withTimeoutOrNull(12_000) {
             suspendCancellableCoroutine { cont ->
                 val found = AtomicInteger(-1)
-                val mdns = AdbMdns(ctx, serviceType) { _, port ->
-                    if (port > 0 && found.compareAndSet(-1, port) && cont.isActive) cont.resume(port)
+                // Stopped once found too (each pairing left a discovery running).
+                lateinit var mdns: AdbMdns
+                mdns = AdbMdns(ctx, serviceType) { _, port ->
+                    if (port > 0 && found.compareAndSet(-1, port) && cont.isActive) { runCatching { mdns.stop() }; cont.resume(port) }
                 }
                 mdns.start()
                 cont.invokeOnCancellation { runCatching { mdns.stop() } }
